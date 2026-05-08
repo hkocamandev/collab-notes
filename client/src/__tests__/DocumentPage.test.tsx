@@ -155,11 +155,19 @@ describe('DocumentPage', () => {
     expect(screen.getByTestId('collab-editor')).toBeDefined();
   });
 
-  it('owner sees Share and Delete buttons', async () => {
+  it('owner sees Share, Delete, and Export PDF buttons', async () => {
     render(<DocumentPage />);
     await waitFor(() => screen.getByDisplayValue('Test Title'));
     expect(screen.getByText('Share')).toBeDefined();
     expect(screen.getByText('Delete')).toBeDefined();
+    expect(screen.getByText('Export PDF')).toBeDefined();
+  });
+
+  it('Export PDF button is disabled (placeholder for future feature)', async () => {
+    render(<DocumentPage />);
+    await waitFor(() => screen.getByDisplayValue('Test Title'));
+    const exportButton = screen.getByText('Export PDF').closest('button');
+    expect(exportButton?.disabled).toBe(true);
   });
 
   it('Share button shows share count badge when document has shares', async () => {
@@ -178,12 +186,13 @@ describe('DocumentPage', () => {
     expect(shareButton?.querySelector('.share-count-badge')).toBeNull();
   });
 
-  it('shared editor sees neither Share nor Delete, only owner attribution', async () => {
+  it('shared editor sees neither Share, Delete nor Export, only owner attribution', async () => {
     mockGetDocument.mockResolvedValue({ document: FAKE_SHARED_DOC });
     render(<DocumentPage />);
     await waitFor(() => screen.getByDisplayValue('Test Title'));
     expect(screen.queryByText('Share')).toBeNull();
     expect(screen.queryByText('Delete')).toBeNull();
+    expect(screen.queryByText('Export PDF')).toBeNull();
     expect(screen.getByText(/Shared by/)).toBeDefined();
   });
 });

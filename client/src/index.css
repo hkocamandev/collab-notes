@@ -156,6 +156,10 @@ a:hover {
   border-color: var(--primary);
   color: var(--primary);
 }
+.btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 
 /* ----- Status messages ----- */
 
