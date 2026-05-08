@@ -61,6 +61,44 @@ npm run dev:client
 npm run build
 ```
 
+## Run with Docker
+
+The full stack ships as three containers behind `docker compose`:
+
+| Service | Image source        | Port (host:container) | Purpose                          |
+| ------- | ------------------- | --------------------- | -------------------------------- |
+| api     | `server/Dockerfile` | `4000:4000`           | Express REST API + Prisma migrate |
+| yws     | `server/Dockerfile` | `4001:4001`           | Yjs WebSocket sync server        |
+| client  | `client/Dockerfile` | `5173:80`             | nginx serving the built SPA      |
+
+**One-time setup**
+
+```bash
+cp .env.example .env
+# edit .env and set JWT_SECRET (use: openssl rand -base64 48)
+```
+
+**Start the stack**
+
+```bash
+docker compose up --build
+```
+
+Then open <http://localhost:5173>. nginx reverse-proxies `/api/*` to the
+`api` container; the client connects to `ws://localhost:4001` for real-time
+sync.
+
+**Data persistence**
+
+The SQLite database lives in the named volume `api_data` mounted at
+`/data` inside the api container. `docker compose down` keeps the volume;
+`docker compose down -v` wipes it.
+
+**Migrations**
+
+`prisma migrate deploy` runs automatically on every `api` container
+startup — idempotent, so it's a no-op when the DB is already current.
+
 ## Roadmap
 
 | Branch                | Scope                                                      |
