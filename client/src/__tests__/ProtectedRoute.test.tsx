@@ -23,6 +23,7 @@ const baseAuth = {
   login: vi.fn(),
   register: vi.fn(),
   logout: vi.fn(),
+  upgrade: vi.fn(),
 } as const;
 
 describe('ProtectedRoute', () => {
@@ -60,10 +61,11 @@ describe('ProtectedRoute', () => {
   it('renders children when authenticated', () => {
     mockUseAuth.mockReturnValue({
       status: 'authenticated',
-      user: { id: '1', email: 'user@example.com', name: 'User' },
+      user: { id: '1', email: 'user@example.com', name: 'User', plan: 'basic' },
       login: vi.fn(),
       register: vi.fn(),
       logout: vi.fn(),
+      upgrade: vi.fn(),
     });
 
     render(

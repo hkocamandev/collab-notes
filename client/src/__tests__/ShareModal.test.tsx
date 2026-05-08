@@ -101,6 +101,20 @@ describe('ShareModal', () => {
     await waitFor(() => screen.getByText(/already shared/));
   });
 
+  it('shows basic-plan limit error on 403 share-limit body', async () => {
+    mockShareDocument.mockRejectedValue(
+      new ApiError(403, { kind: 'share-limit', limit: 1, plan: 'basic' }, 'Limit'),
+    );
+    render(<ShareModal documentId="doc-1" documentTitle="Doc" onClose={onClose} />);
+
+    fireEvent.change(screen.getByLabelText('Email to share with'), {
+      target: { value: 'second@x.com' },
+    });
+    fireEvent.click(screen.getByText('Share'));
+
+    await waitFor(() => screen.getByText(/Basic plan allows only 1 share/));
+  });
+
   it('revokes a share and re-fetches the list (showing empty)', async () => {
     // First load: Alice exists. After revoke, list is empty.
     mockListShares.mockResolvedValueOnce({

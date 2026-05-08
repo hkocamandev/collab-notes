@@ -114,4 +114,17 @@ describe('Sidebar', () => {
     fireEvent.click(screen.getByText('Team Plan'));
     expect(mockNavigate).toHaveBeenCalledWith('/documents/doc-shared');
   });
+
+  it('disables "+ New document" when atDocumentLimit is true', () => {
+    render(<Sidebar {...defaultProps} atDocumentLimit />);
+    const newDocButton = screen.getByText('+ New document').closest('button');
+    expect(newDocButton?.disabled).toBe(true);
+    expect(screen.getByText(/5\/5 used/)).toBeDefined();
+  });
+
+  it('does not call onCreateDocument when at limit', () => {
+    render(<Sidebar {...defaultProps} atDocumentLimit />);
+    fireEvent.click(screen.getByText('+ New document'));
+    expect(defaultProps.onCreateDocument).not.toHaveBeenCalled();
+  });
 });

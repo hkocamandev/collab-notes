@@ -249,10 +249,49 @@ a:hover {
   cursor: pointer;
   transition: border-color 0.15s, color 0.15s, background 0.15s;
 }
-.btn-new-doc:hover {
+.btn-new-doc:hover:not(:disabled) {
   border-color: var(--primary);
   color: var(--primary);
   background: var(--primary-soft);
+}
+.btn-new-doc:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.sidebar-limit-hint {
+  margin: 0.4rem 0 0;
+  font-size: 0.7rem;
+  color: var(--muted);
+  text-align: center;
+}
+
+/* ── Plan badge + upgrade ────────────────────────── */
+.plan-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  border-radius: 9999px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  cursor: default;
+}
+.plan-badge--basic {
+  background: var(--surface);
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+.plan-badge--premium {
+  background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+  color: #fff;
+  border: 1px solid transparent;
+}
+
+.btn-upgrade {
+  font-size: 0.8rem;
+  padding: 0.35rem 0.75rem;
 }
 
 .sidebar-nav {
