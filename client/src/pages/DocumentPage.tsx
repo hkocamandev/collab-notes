@@ -7,7 +7,7 @@ type SaveState = 'idle' | 'saving' | 'saved';
 
 export default function DocumentPage() {
   const { id } = useParams<{ id: string }>();
-  const { onDelete } = useOutletContext<WorkspaceOutletContext>();
+  const { onDelete, onUpdate } = useOutletContext<WorkspaceOutletContext>();
   const navigate = useNavigate();
 
   const [doc, setDoc] = useState<Document | null>(null);
@@ -45,11 +45,12 @@ export default function DocumentPage() {
     const timer = setTimeout(async () => {
       try {
         await updateDocument(id, { title, content });
+        onUpdate(id, title);
         setSaveState('saved');
       } catch {
         setSaveState('idle');
       }
-    }, 500);
+    }, 1500);
     return () => clearTimeout(timer);
   }, [title, content]); // eslint-disable-line react-hooks/exhaustive-deps
 

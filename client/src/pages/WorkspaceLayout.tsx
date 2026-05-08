@@ -13,6 +13,7 @@ import {
 
 export interface WorkspaceOutletContext {
   onDelete: (id: string) => Promise<void>;
+  onUpdate: (id: string, title: string) => void;
 }
 
 export default function WorkspaceLayout() {
@@ -54,6 +55,12 @@ export default function WorkspaceLayout() {
     navigate(`/documents/${res.document.id}`);
   }
 
+  function handleUpdate(id: string, title: string) {
+    setDocuments(prev =>
+      prev.map(d => (d.id === id ? { ...d, title } : d)),
+    );
+  }
+
   return (
     <div className="workspace">
       <Sidebar
@@ -74,7 +81,7 @@ export default function WorkspaceLayout() {
           </div>
         </header>
         <main className="workspace-main">
-          <Outlet context={{ onDelete: handleDelete } satisfies WorkspaceOutletContext} />
+          <Outlet context={{ onDelete: handleDelete, onUpdate: handleUpdate } satisfies WorkspaceOutletContext} />
         </main>
       </div>
     </div>

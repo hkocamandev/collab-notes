@@ -4,11 +4,12 @@ import DocumentPage from '../pages/DocumentPage';
 
 const mockNavigate = vi.fn();
 const mockOnDelete = vi.fn();
+const mockOnUpdate = vi.fn();
 
 vi.mock('react-router-dom', () => ({
   useParams: () => ({ id: 'doc-1' }),
   useNavigate: () => mockNavigate,
-  useOutletContext: () => ({ onDelete: mockOnDelete }),
+  useOutletContext: () => ({ onDelete: mockOnDelete, onUpdate: mockOnUpdate }),
 }));
 
 vi.mock('../documents/api', () => ({
@@ -75,8 +76,9 @@ describe('DocumentPage', () => {
           title: 'New Title',
           content: 'Test content',
         }),
-      { timeout: 2000 },
+      { timeout: 3000 },
     );
+    expect(mockOnUpdate).toHaveBeenCalledWith('doc-1', 'New Title');
   });
 
   it('shows Saved after successful auto-save', async () => {
@@ -87,7 +89,7 @@ describe('DocumentPage', () => {
       target: { value: 'Updated' },
     });
 
-    await waitFor(() => screen.getByText('Saved'), { timeout: 2000 });
+    await waitFor(() => screen.getByText('Saved'), { timeout: 3000 });
   });
 
   it('calls onDelete when Delete button clicked', async () => {
