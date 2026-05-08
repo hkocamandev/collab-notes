@@ -178,6 +178,14 @@ function DocumentPageBody({ id }: { id: string }) {
               <button className="btn-secondary btn-danger" onClick={() => void handleDelete()}>
                 Delete
               </button>
+              <button
+                className="btn-secondary"
+                disabled
+                title="PDF export — coming soon"
+                aria-label="Export PDF (coming soon)"
+              >
+                Export PDF
+              </button>
             </>
           )}
           {doc.permission === 'editor' && doc.ownerEmail && (
