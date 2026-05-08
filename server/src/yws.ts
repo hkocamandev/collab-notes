@@ -1,3 +1,19 @@
+// Custom Yjs WebSocket sync server.
+//
+// Why custom: y-websocket v3 only ships the client; the server is
+// expected to be implemented per project. We keep it minimal — one room
+// per document keyed by URL pathname, in-memory ydoc + Awareness, broadcast
+// every update to every connection in the room.
+//
+// Two message kinds are routed: MESSAGE_SYNC (Yjs sync protocol — state
+// vectors / step-2 / live updates) and MESSAGE_AWARENESS (presence +
+// revoke signals). The actual binary framing (`encoding`/`decoding`)
+// follows the y-protocols spec exactly so any standard y-websocket client
+// is compatible without extra config.
+//
+// Started only when YWS_START=1 — guards against accidental boot during
+// `vitest` imports of this module for testing.
+
 import { createServer, type IncomingMessage } from 'http';
 import { WebSocketServer, WebSocket, type RawData } from 'ws';
 import * as Y from 'yjs';

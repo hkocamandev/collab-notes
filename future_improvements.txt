@@ -1,0 +1,311 @@
+================================================================================
+COLLAB NOTES — FUTURE IMPROVEMENTS
+================================================================================
+
+A consolidated roadmap of intentional gaps in the current implementation,
+grouped by topic. Each item lists why it's not in scope today, the rough
+shape of the work, and any prerequisites.
+
+
+--------------------------------------------------------------------------------
+1. LANGUAGE / INTERNATIONALISATION
+--------------------------------------------------------------------------------
+
+  Current state
+    - All UI strings are hard-coded English.
+    - Embedding model (all-MiniLM-L6-v2) is English-leaning, so semantic
+      search on Turkish documents has degraded recall.
+
+  Improvements
+    - Add an i18n layer (react-i18next or LinguiJS) with locale JSON files;
+      detect from `navigator.language` with a manual override.
+    - Swap the embedding model to
+      `Xenova/paraphrase-multilingual-MiniLM-L12-v2` (~120 MB, 50+ langs).
+      One-line change in `server/src/ai/embedding.ts`; image grows ~100 MB.
+    - Server-side validation messages currently hard-coded; should accept
+      `Accept-Language` and respond in the right locale OR keep them in
+      English and let the client translate.
+
+
+--------------------------------------------------------------------------------
+2. CROSS-BROWSER REAL-TIME (BroadcastChannel scope limit)
+--------------------------------------------------------------------------------
+
+  Current state
+    BroadcastChannel only spans tabs of the same browser on the same origin.
+    A user signed into Chrome on machine A and Firefox on machine B is not
+    notified of share-added / soft-deleted / restored / etc. events. They
+    must refresh to see updates. (Yjs awareness via the yws WebSocket DOES
+    cross browsers, so document-level edits and revoke kick-out work
+    everywhere; only sidebar-level notifications miss.)
+
+  Improvements
+    - Add a per-user notification channel on the server. Two viable shapes:
+      a) Server-Sent Events on the API (`GET /api/events/stream`) —
+         simple, one HTTP/2 connection per session.
+      b) Per-user yws room (`user-${userId}`) the client subscribes to on
+         login. Reuses the existing WebSocket infrastructure.
+    - Move all docEvents broadcasts behind a small abstraction so we can
+      flip between BC, SSE, and yws inbox without touching call sites.
+
+
+--------------------------------------------------------------------------------
+3. PDF EXPORT
+--------------------------------------------------------------------------------
+
+  Current state
+    Owner-only "Export PDF" placeholder button is rendered disabled with a
+    "coming soon" tooltip. No backing implementation.
+
+  Improvements — pick one based on fidelity needs
+    a) Client-side: `html2pdf.js` or `jsPDF` + `html2canvas`. Zero
+       infrastructure, decent fidelity. Works for the common case;
+       complex Tiptap layouts (tables, code blocks) may render off.
+    b) Server-side: a Puppeteer-driven render service that loads the
+       document, screenshots it, and returns the PDF. High fidelity but
+       requires a Chromium binary in the image (~150 MB) and a render
+       queue if usage scales.
+
+  Either way, gate the button behind a plan check if heavy export should
+  be a premium-only feature.
+
+
+--------------------------------------------------------------------------------
+4. VERSION RESTORE
+--------------------------------------------------------------------------------
+
+  Current state
+    Read-only version history. The "Restore" button per row is disabled.
+    DocumentVersion already stores full title + content so the data side
+    is ready.
+
+  Improvements
+    - New endpoint `POST /api/documents/:id/versions/:versionId/restore`
+      (owner OR editor; arguable). Loads the version, writes title +
+      content back into the live document via Prisma + the Yjs binding so
+      all connected clients see the change in real time.
+    - Optionally keep an "audit" entry of who restored what, when.
+    - UI: enable the Restore button + a confirmation modal ("This
+      replaces the current content; another snapshot is created on
+      logout"). After success, refetch the doc / let Yjs sync naturally.
+
+
+--------------------------------------------------------------------------------
+5. PREMIUM PRICING INFRASTRUCTURE
+--------------------------------------------------------------------------------
+
+  Current state
+    `/api/auth/upgrade` is a one-tap toggle with no payment. Only basic
+    vs. premium plan strings exist.
+
+  Improvements
+    - Integrate a payment provider (Stripe is the obvious choice for an
+      international audience; iyzico for TR-only). Webhooks update
+      `User.plan` on subscription created / updated / canceled.
+    - Persist plan history (start/end dates, payment refs) in a new
+      `Subscription` table.
+    - Implement downgrade flow: trigger on cancel webhook; respect the
+      paid-through-date before flipping back to basic.
+    - Add a `Plan` enum on the server side (currently a free-form string).
+    - User-facing pricing page + portal link to manage billing.
+    - Tax / VAT handling depends on jurisdictions; outsource to the
+      payment provider's tax engine where possible.
+
+
+--------------------------------------------------------------------------------
+6. EMAIL NOTIFICATIONS
+--------------------------------------------------------------------------------
+
+  Current state
+    Toast notification fires only for same-browser recipients. No emails.
+
+  Improvements (this is its own substantial body of work)
+    - SMTP provider: SendGrid / AWS SES / Postmark for transactional
+      delivery. Use a dedicated subdomain with proper SPF/DKIM/DMARC.
+    - Templating: HTML + plain-text fallbacks, branded layout, an
+      unsubscribe link required by GDPR/KVKK and CAN-SPAM.
+    - Background queue: BullMQ + Redis or pg-boss to decouple API
+      latency from email send time. Retry policy for transient failures.
+    - User preferences: a `User.notificationPreferences` JSON column or
+      a separate table (per event-kind on/off toggle).
+    - Triggers: share-added, share-revoked, document-soft-deleted (for
+      shared editors), maybe a daily digest of mentions if @-mentions
+      land later.
+    - Audit / compliance: log delivery + opens; honour unsubscribe
+      immediately and durably.
+
+
+--------------------------------------------------------------------------------
+7. SCALABILITY
+--------------------------------------------------------------------------------
+
+  Current state vs. limits
+    - SQLite single-writer means concurrent PATCH performance peaks at
+      a few hundred QPS; fine for a small team.
+    - The yws server holds in-memory rooms in the API process; horizontal
+      scale duplicates state (each replica gets its own ydoc per room).
+    - AI search is O(N) over user docs; embedding is computed in-process.
+    - Versions are JSON blobs; storage grows linearly with edits.
+
+  Improvements
+    Database
+      - Move to PostgreSQL. Prisma provider is a one-line change; SQLite
+        migrations need re-applying against an empty PG database.
+      - Add `pgvector` for embeddings; replace JSON column with a
+        `vector(384)` type and `<=>` cosine ops (HNSW index for sub-linear
+        search).
+
+    Yjs WebSocket cluster
+      - Front yws replicas with sticky-session load balancing OR add a
+        shared event bus (Redis pub/sub) so any replica can broadcast to
+        any room.
+      - Persist Yjs updates to durable storage (Y.PersistedState pattern)
+        so a restart doesn't lose unsaved edits between Yjs syncs.
+
+    AI search
+      - Move embedding to a worker pool (Node worker_threads) so CPU
+        bound inference doesn't stall the event loop.
+      - Cache `query → vector` (queries repeat).
+      - Hybrid retrieval: BM25 first-pass narrows the candidate set, then
+        re-rank with embedding similarity.
+
+    HTTP / API
+      - Add rate limiting (express-rate-limit) at least on auth + ai
+        endpoints.
+      - Cache-aware GET responses where appropriate (etag + 304 for
+        listDocuments?).
+
+    Observability
+      - Structured logging (pino) + request IDs.
+      - Open Telemetry traces across api → yws → AI.
+      - Metrics endpoint (Prometheus) for plan-limit hits, search
+        latency, snapshot job counts, etc.
+
+    Storage
+      - Snapshot retention policy (e.g. keep last N or last M days);
+        currently versions accumulate forever.
+      - Move file-style content (large attachments, images) out of
+        the SQLite/PG row to S3-style object storage with signed URLs.
+
+
+--------------------------------------------------------------------------------
+8. OFFLINE SUPPORT
+--------------------------------------------------------------------------------
+
+  Current state
+    The app needs the API up to load anything — including the document
+    list and the editor. While Yjs CRDT is technically capable of offline
+    edits with later reconciliation, our load path goes through REST.
+
+  Improvements
+    - Service Worker that caches the SPA shell + recent docs + nginx
+      static assets (Workbox makes this routine).
+    - IndexedDB persistence for Yjs (`y-indexeddb`) — local doc state is
+      restored on next load even before the WebSocket reconnects.
+    - Optimistic offline edits: queue PATCH calls; sync on reconnect.
+    - "Offline" banner UI when navigator.onLine is false.
+
+
+--------------------------------------------------------------------------------
+9. RESPONSIVE / MOBILE
+--------------------------------------------------------------------------------
+
+  Current state
+    Layout is desktop-first (fixed sidebar, modals sized for ≥1024 px).
+    Tablets are usable but cramped; phones don't work properly.
+
+  Improvements
+    - Replace the fixed sidebar with a slide-in drawer below ~768 px.
+    - Stack the doc toolbar (Share / Delete / Export PDF / History) into
+      a "..." menu.
+    - Touch-friendly hit areas (≥44 px).
+    - Modal full-screen takeover on mobile (`max-width: 100%` + sheet
+      animation).
+    - Tiptap editor already handles mobile reasonably; just need to
+      double-check slash menu positioning + soft keyboard avoidance.
+
+
+--------------------------------------------------------------------------------
+10. MCP SERVER ENHANCEMENTS
+--------------------------------------------------------------------------------
+
+  Current state
+    The MCP server is wired up with @modelcontextprotocol/sdk and
+    exposes search_documents, but no transport is bound. The REST
+    endpoint calls the same `searchDocuments` core directly.
+
+  Improvements
+    - Add a stdio entry point so Claude Desktop or any MCP-compatible
+      client can plug in: `server/src/ai/mcpStdio.ts` calls
+      `connectStdio(server)`. Distribute as a small helper script.
+    - More tools: `create_document(title, content)`,
+      `summarize_document(id)`, `list_recent(n)`, `find_shared_with(email)`.
+    - Per-tool permission scoping (some tools premium-only?).
+    - Expose tools over HTTP/SSE transport so the web client could
+      discover them dynamically rather than hard-coding REST paths.
+
+
+--------------------------------------------------------------------------------
+11. SECURITY HARDENING
+--------------------------------------------------------------------------------
+
+  Current state
+    Functional auth + per-user data isolation. Several common production
+    safeguards aren't in yet.
+
+  Improvements
+    - Helmet / standard security headers (CSP, X-Frame-Options,
+      Referrer-Policy, etc.) on the API.
+    - Rate limiting on /auth/login and /auth/register (brute-force
+      mitigation).
+    - Refresh-token / rotation: today the JWT is 7 days; a leaked token
+      is valid for the full window. Add httpOnly refresh-token cookie +
+      short-lived access tokens.
+    - Account lockout / soft-bans after repeated failed logins.
+    - WebSocket auth: yws currently accepts any connection that knows the
+      port. JWT verify on upgrade (or via a query parameter / first
+      message) so an attacker on the same network can't snoop.
+    - CSRF protection if cookies replace the bearer token model.
+    - Input sanitisation on the editor side: Tiptap + DOMPurify on
+      paste to strip script-bearing HTML.
+    - Dependency audit pipeline (`npm audit`, Snyk, GitHub Dependabot).
+
+  Tests
+    - SAST tools (Semgrep) in CI.
+    - Authenticated fuzz tests on each endpoint (e.g. ZAP, Burp, or a
+      lightweight script).
+    - Penetration test before any external launch.
+
+
+--------------------------------------------------------------------------------
+12. END-TO-END / INTEGRATION TESTS
+--------------------------------------------------------------------------------
+
+  Current state
+    244 unit + lightweight integration tests. No browser-driven E2E.
+
+  Improvements
+    - Playwright suite: register → create doc → invite second user →
+      verify real-time sync between two browser contexts → revoke →
+      verify kick-out → upgrade plan.
+    - Test against a `docker compose up` stack so production wiring is
+      exercised, not just the npm dev mode.
+    - Visual regression with Percy or Chromatic on key pages.
+    - Run E2E in CI on PRs (cache Docker layers + Playwright browsers).
+
+
+--------------------------------------------------------------------------------
+ABOUT PRIORITISATION
+--------------------------------------------------------------------------------
+
+  If forced to pick three improvements first, I'd ship in this order:
+
+    1. PostgreSQL + pgvector migration (unlocks horizontal scale + a
+       cleaner AI path).
+    2. End-to-end Playwright suite (catches regressions across the now-
+       sizable feature surface, especially real-time sync).
+    3. Email notifications (the most visible "we noticed" signal for
+       users who don't keep tabs open).
+
+  Everything else is meaningful but situational; these three move the
+  most needles per unit of effort.

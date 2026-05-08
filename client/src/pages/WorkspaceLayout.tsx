@@ -1,3 +1,18 @@
+// Authenticated workspace shell.
+//
+// Owns the live document lists (owner + shared + trash), plan-aware UI
+// state (badge, doc-count, upgrade button), the toast queue, and the
+// cross-tab/cross-user event hub. Children render inside <Outlet />:
+//   - WorkspaceHome (selection prompt) when at "/"
+//   - DocumentPage when at "/documents/:id"
+//
+// Two real-time channels feed this layout:
+//   - useDocEvents (BroadcastChannel) for same-browser tab sync —
+//     filtered by forUserId so different users in different tabs of the
+//     same browser don't leak into each other's sidebars.
+//   - Yjs awareness inside CollabEditor (cross-browser, via the yws
+//     server) for revoke kick-out and presence.
+
 import { useEffect, useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext.js';

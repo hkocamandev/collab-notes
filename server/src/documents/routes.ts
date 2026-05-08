@@ -1,3 +1,18 @@
+// Document HTTP API: CRUD, soft-delete + restore + permanent delete,
+// share management, version history, plan-aware limits, and the
+// per-user logout snapshot endpoint. All routes are auth-required.
+//
+// Permission model:
+//   - Owner = user.id matches Document.userId
+//   - Editor = there is a DocumentShare row linking this user to the doc
+//   - Read (GET / PATCH) is allowed for owner OR editor
+//   - Lifecycle (delete / restore / permanent / share management) is
+//     owner-only; non-owners get a 403 with a structured body
+//
+// `shapeDocument` injects per-request fields (permission, ownerEmail,
+// shareCount, …) so the same DB row presents differently to owner vs.
+// editor without leaking owner-only data.
+
 import { Router, type Request, type Response } from 'express';
 import { db } from '../db.js';
 import { requireAuth } from '../auth/middleware.js';

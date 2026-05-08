@@ -1,3 +1,12 @@
+// Express middleware: verifies the JWT in the Authorization header,
+// loads the matching user from the DB, and attaches it to req.user
+// (typed via server/src/types/express.d.ts).
+//
+// Loading the user every request — instead of trusting the JWT body —
+// means deletions, plan upgrades, etc. take effect on the next call
+// without waiting for the token to expire. Keeps the cost cheap by
+// projecting only id/email/name/plan via Prisma `select`.
+
 import type { Request, Response, NextFunction } from 'express';
 import { verifyToken } from './jwt.js';
 import { db } from '../db.js';

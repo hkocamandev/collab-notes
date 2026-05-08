@@ -1,3 +1,18 @@
+// Single-document view.
+//
+// The outer DocumentPage just reads the route :id and renders
+// DocumentPageBody with key={id} so a navigation between docs cleanly
+// resets all state (Yjs cache acquire, loadedRef, save state, …) without
+// custom teardown.
+//
+// DocumentPageBody owns the title (Y.Text via useCollabTitle), local
+// content state for auto-save, presence list, plus the Share / History
+// modal toggles. It composes:
+//   - FormatToolbar (active mark/blocks, controlled by editor state)
+//   - CollabEditor (Tiptap + Yjs binding, presence, revoke detection)
+//   - ShareModal / VersionHistoryModal (lazy-mounted via state)
+// Permission gates Share / Delete / Export PDF visibility.
+
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { useNavigate, useOutletContext, useParams } from 'react-router-dom';
 import type { Editor as TiptapEditor } from '@tiptap/core';

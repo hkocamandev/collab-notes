@@ -1,0 +1,311 @@
+================================================================================
+COLLAB NOTES — TECHNICAL DOCUMENTATION
+================================================================================
+
+A real-time collaborative note-taking application inspired by Notion, built
+as a full-stack assignment showcasing CRDT-based concurrent editing, plan
+tiers, version history, and local AI search.
+
+Repository: https://github.com/hkocamandev/collab-notes
+
+
+--------------------------------------------------------------------------------
+TABLE OF CONTENTS
+--------------------------------------------------------------------------------
+
+  1. Stack overview
+  2. Architecture
+  3. Features
+  4. API endpoints
+  5. Running the project
+  6. Test coverage
+  7. Notable design decisions
+
+
+--------------------------------------------------------------------------------
+1. STACK OVERVIEW
+--------------------------------------------------------------------------------
+
+  Frontend
+    React 18, Vite 5, TypeScript (strict)
+    React Router 7
+    Tiptap v3 (block-based editor + slash commands)
+    Yjs + y-websocket (CRDT real-time sync)
+
+  Backend
+    Node.js 20, Express, TypeScript
+    Prisma ORM + SQLite
+    JWT (HS256) auth, bcryptjs, zod validation
+    Custom Yjs WebSocket server (y-protocols, lib0)
+
+  AI
+    transformers.js (@xenova/transformers)
+    Sentence transformer: Xenova/all-MiniLM-L6-v2 (384-dim, ~22 MB ONNX)
+    @modelcontextprotocol/sdk for tool-server contract
+
+  Infrastructure
+    Docker + docker-compose (3 services: api, yws, client-nginx)
+    npm workspaces monorepo
+
+
+--------------------------------------------------------------------------------
+2. ARCHITECTURE
+--------------------------------------------------------------------------------
+
+  Three runtime services orchestrated by docker-compose:
+
+    ┌─────────────────────────┐
+    │  client (nginx :5173)   │  Built React SPA, reverse-proxies /api
+    └────────────┬────────────┘
+                 │
+        ┌────────┴────────┐
+        ▼                 ▼
+    ┌─────────┐     ┌─────────┐
+    │ api     │     │ yws     │  In-memory Yjs rooms; broadcasts
+    │ :4000   │     │ :4001   │  sync + awareness messages.
+    │ Express │     │ ws      │
+    └────┬────┘     └─────────┘
+         │
+         ▼
+    ┌─────────────────────┐
+    │ SQLite (volume)     │
+    │ Prisma migrations   │
+    └─────────────────────┘
+
+  Browser flow:
+    HTML/JS/CSS via nginx → REST via /api proxy → WebSocket directly to :4001
+    (no nginx upgrade map; matches dev parity).
+
+
+--------------------------------------------------------------------------------
+3. FEATURES
+--------------------------------------------------------------------------------
+
+A. Authentication
+   Branch: dev/1-skeleton
+   - JWT tokens, 7-day expiry, HS256
+   - bcryptjs password hashing (10 rounds)
+   - Email + password register/login, optional display name
+   - sessionStorage-based token storage on the client (per-tab isolation
+     so two users can be tested side-by-side in the same browser)
+   - apiFetch with 12 s AbortController timeout
+
+B. Document CRUD + soft delete
+   Branch: dev/2-documents
+   - Per-user owned documents with title, HTML content, timestamps
+   - Soft delete (Trash) + restore + permanent delete
+   - Sidebar with active highlight, "Trash" section, restore/×
+   - Inline title + body editing
+   - Debounced auto-save (1.5 s)
+
+C. Block-based rich text editor
+   Branch: dev/3-editor
+   - Tiptap StarterKit + Placeholder + Underline + TaskList + CodeBlockLowlight
+     + Link + CharacterCount + Typography + custom SlashCommand + TabKey
+   - 12 slash commands (/heading1-3, /bulletList, /numberedList, /taskList,
+     /codeBlock, /blockquote, /divider, /bold, /italic, /underline)
+   - Format toolbar (active state per cursor position)
+   - Word + character counter
+   - Paper-frame layout, sticky toolbar, auto-scroll on cursor
+
+D. Real-time collaboration (CRDT)
+   Branch: dev/4-realtime
+   - Yjs CRDT for both title (Y.Text) and body (Tiptap Collaboration)
+   - Custom WebSocket server: server/src/yws.ts on port 4001
+     • Per-document room, in-memory ydoc + Awareness
+     • MESSAGE_SYNC + MESSAGE_AWARENESS dispatch
+     • Connection cleanup removes stale awareness state
+   - Module-level Yjs cache (yjsCache.ts) with deferred destroy:
+     React StrictMode mount→unmount→remount survives via setTimeout(0)
+   - Presence: deterministic user color, name initial avatar, CSS tooltip
+   - Late-join awareness re-sync: peer state captured on first listener attach
+   - BroadcastChannel-based same-browser cross-tab events (docEvents.ts)
+     filtered by forUserId — covers create / soft-delete / restore /
+     permanent-delete / share-added / share-revoked / shared-doc-* lifecycle
+
+E. Document sharing
+   Branch: dev/4-realtime
+   - DocumentShare Prisma model: cascade on delete, unique (documentId, userId)
+   - Owner/editor permission split (Document.permission inferred per request)
+   - Endpoints: POST /share, GET /shares, DELETE /share/:userId (owner-only)
+   - ShareModal UI: email invite, current shares list, revoke button,
+     share-count badge on the Share button
+   - "Editor" pill button: closes the modal and jumps cursor to end of doc
+   - Real-time revoke: Yjs awareness signal kicks active editors out of the doc
+   - 403 errors carry a structured body { kind, limit, plan } for friendly UI
+
+F. PDF export placeholder
+   Branch: dev/5-pdf-export
+   - Disabled "Export PDF" button to the right of Delete (owner-only)
+   - Tooltip "PDF export — coming soon"; structured for future
+     client-side (jsPDF/html2pdf) or server-side (puppeteer) implementation
+
+G. Document versioning
+   Branch: dev/6-versioning
+   - DocumentVersion model: full title + content snapshot, editedById,
+     editedAt, createdAt
+   - PATCH /:id records lastEditedById and lastEditedAt on every update
+   - POST /api/documents/snapshot-mine called on logout: snapshots every doc
+     where current user is the last editor. Skips duplicates via editedAt
+     dedupe so idle logouts don't bloat history.
+   - VersionHistoryModal: relative + absolute timestamp, editor identity,
+     refresh button, disabled "Restore" placeholder for future work
+   - Owner + shared editor can both view history
+
+H. Docker stack
+   Branch: dev/7-docker
+   - Multi-stage server image (node:20-slim base for native deps glibc),
+     openssl installed for Prisma engine, model prefetched at build time
+   - Multi-stage client image (Node builder → nginx alpine static)
+   - SQLite persisted in named volume (api_data → /data)
+   - prisma migrate deploy runs on container startup (idempotent)
+   - JWT_SECRET enforced via .env (compose ${VAR:?...} syntax)
+
+I. Basic vs Premium plans
+   Branch: dev/8-premium
+   - User.plan ("basic" | "premium"); default basic
+   - Server-enforced caps: 5 active owned documents, 1 share recipient per doc
+   - Premium: unlimited
+   - One-tap POST /api/auth/upgrade; downgrade not implemented
+   - Header plan badge ("Basic · N/5 docs" / "Premium ✦")
+   - Sidebar "+ New document" disabled at limit + tooltip
+   - ShareModal maps share-limit 403 to friendly upgrade prompt
+
+J. Toast notifications
+   Branch: dev/9-notification
+   - Sender pushes share-added BroadcastChannel event with senderName,
+     senderEmail, docTitle
+   - Recipient's WorkspaceLayout pushes ToastList entry: 10s lifecycle via
+     setTimeout + CSS animation (slide-in 5%, hold 90%, fade-out 5%)
+   - aria-live="polite" region; manual × dismiss button
+   - Same-browser only via BC (cross-browser realtime is future work)
+
+K. Local AI document search
+   Branch: dev/10-mcp-ai
+   - Embedding service (server/src/ai/embedding.ts):
+     all-MiniLM-L6-v2 lazy pipeline, embed(text), cosineSim(a,b),
+     htmlToText, docTextForEmbedding (title repeated once for emphasis,
+     4000 char cap)
+   - searchDocuments core: ranks owner+shared accessible docs by cosine
+     similarity. Lazy-backfills missing embeddings on first search.
+   - MCP server (mcpServer.ts): registers search_documents tool with
+     @modelcontextprotocol/sdk; not yet bound to a transport. Same core
+     as the REST endpoint so behaviour is identical.
+   - REST endpoint POST /api/ai/ask: zod-validated query (1-500 chars),
+     optional limit, returns ranked results.
+   - PATCH /api/documents/:id triggers embedding refresh fire-and-forget.
+   - AskAi UI: sidebar-bottom panel, textarea + Ask button + result list,
+     click navigate.
+   - Docker prefetches the model into the image at build time → runtime
+     fully offline.
+
+
+--------------------------------------------------------------------------------
+4. API ENDPOINTS
+--------------------------------------------------------------------------------
+
+  Auth (server/src/auth/routes.ts)
+    POST   /api/auth/register     register; returns { token, user }
+    POST   /api/auth/login        login;    returns { token, user }
+    GET    /api/auth/me           current user (auth)
+    POST   /api/auth/upgrade      flip plan to premium (auth)
+
+  Documents (server/src/documents/routes.ts) — all auth-required
+    GET    /api/documents                       owned + shared, with permission
+    GET    /api/documents/trash                 owner-only soft-deleted list
+    POST   /api/documents                       create (basic capped at 5)
+    POST   /api/documents/snapshot-mine         logout snapshot endpoint
+    GET    /api/documents/:id                   owner OR shared editor
+    PATCH  /api/documents/:id                   title/content (owner OR editor)
+    GET    /api/documents/:id/versions          version history (any access)
+    DELETE /api/documents/:id                   soft delete (owner-only)
+    DELETE /api/documents/:id/permanent         permanent (owner-only)
+    PATCH  /api/documents/:id/restore           restore (owner-only)
+    GET    /api/documents/:id/shares            list shares (owner-only)
+    POST   /api/documents/:id/share             add share (owner-only,
+                                                 basic capped at 1)
+    DELETE /api/documents/:id/share/:userId     revoke (owner-only)
+
+  AI (server/src/ai/router.ts) — auth required
+    POST   /api/ai/ask                          semantic search
+
+  Misc
+    GET    /api/ping                            { message: "pong", time }
+    GET    /api/health                          { status: "ok" }
+
+
+--------------------------------------------------------------------------------
+5. RUNNING THE PROJECT
+--------------------------------------------------------------------------------
+
+  Dev mode (hot reload, three local processes)
+    npm install
+    npm run dev          # client + api + yws in parallel
+
+  Docker (production-style, single command)
+    cp .env.example .env
+    # set JWT_SECRET (openssl rand -base64 48)
+    docker compose up --build
+
+  Browser at http://localhost:5173.
+
+  Tests
+    npm run test          # 244 tests (148 server + 96 client)
+    npm run typecheck     # both workspaces
+
+
+--------------------------------------------------------------------------------
+6. TEST COVERAGE
+--------------------------------------------------------------------------------
+
+  Server (148 tests, vitest + supertest)
+    auth/jwt, auth/schemas, auth/routes, auth/upgrade, /me with plan,
+    documents CRUD + permissions, share endpoints + plan limits,
+    versioning + snapshot-mine, AI route + embedding helpers,
+    yws WebSocket server.
+
+  Client (96 tests, vitest + @testing-library/react + happy-dom)
+    apiClient, AuthContext (login/logout snapshot/upgrade),
+    ProtectedRoute, LoginPage, Sidebar (incl. Shared with me + at-limit),
+    DocumentPage (toolbar visibility per permission, share count badge,
+    plan-aware buttons), CollabEditor (presence, late-join sync,
+    revoke detection via awareness), ShareModal (CRUD, limit error,
+    sender-info broadcast), VersionHistoryModal, Toast, AskAi.
+
+
+--------------------------------------------------------------------------------
+7. NOTABLE DESIGN DECISIONS
+--------------------------------------------------------------------------------
+
+  - Yjs cache: module-level entry per docId with refcount + deferred destroy.
+    Survives React StrictMode's intentional dev unmount-remount cycle by
+    cancelling a 0 ms destroy timer when the component re-mounts in the same
+    macrotask.
+
+  - sessionStorage auth: per-tab isolation lets two users log in
+    side-by-side in the same browser. Trade-off: opening a new tab requires
+    a fresh login.
+
+  - Cross-tab + cross-user events ride two channels:
+    BroadcastChannel for same-browser tabs (filtered by forUserId so unrelated
+    users don't see each other's events) and Yjs awareness for cross-browser
+    cross-user signals (e.g. revoke kick-out).
+
+  - Plan limits enforced server-side; UI mirrors them as a UX gate. Server
+    is the source of truth; bypassing the UI still hits a 403.
+
+  - Docker server image deliberately uses node:20-slim instead of alpine.
+    Native deps (onnxruntime-node, prisma engines) need glibc. Slim adds
+    ~80 MB but works out of the box.
+
+  - AI search is purely embedding-based (no generative LLM). The user's
+    flow ("type a query, return doc titles") is classic information
+    retrieval; an LLM would be over-engineering.
+
+  - MCP framework integrated even though no transport is bound: the tool
+    contract is standardised for future plug-in to Claude Desktop or other
+    MCP agents without re-implementing search_documents.
+
+  - Versioning trigger is logout (not edit-time): a session-end checkpoint
+    is more meaningful than per-save churn. Duplicate-prevention via
+    editedAt dedupe stops idle logouts from polluting history.

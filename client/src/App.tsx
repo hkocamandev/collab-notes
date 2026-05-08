@@ -1,3 +1,10 @@
+// Top-level router + global providers.
+//
+// Composition: ErrorBoundary (catches any uncaught render error) wraps the
+// AuthProvider (status: loading | authenticated | unauthenticated), which
+// wraps the BrowserRouter. ProtectedRoute defers rendering until auth is
+// resolved and redirects unauthenticated visitors to /login.
+
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AuthProvider } from './auth/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
