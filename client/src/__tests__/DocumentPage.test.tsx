@@ -155,9 +155,10 @@ describe('DocumentPage', () => {
     expect(screen.getByTestId('collab-editor')).toBeDefined();
   });
 
-  it('owner sees Share, Delete, and Export PDF buttons', async () => {
+  it('owner sees History, Share, Delete, and Export PDF buttons', async () => {
     render(<DocumentPage />);
     await waitFor(() => screen.getByDisplayValue('Test Title'));
+    expect(screen.getByText('History')).toBeDefined();
     expect(screen.getByText('Share')).toBeDefined();
     expect(screen.getByText('Delete')).toBeDefined();
     expect(screen.getByText('Export PDF')).toBeDefined();
@@ -186,10 +187,12 @@ describe('DocumentPage', () => {
     expect(shareButton?.querySelector('.share-count-badge')).toBeNull();
   });
 
-  it('shared editor sees neither Share, Delete nor Export, only owner attribution', async () => {
+  it('shared editor sees History but not Share/Delete/Export', async () => {
     mockGetDocument.mockResolvedValue({ document: FAKE_SHARED_DOC });
     render(<DocumentPage />);
     await waitFor(() => screen.getByDisplayValue('Test Title'));
+    // History is gated only by access — both owner and editor see it
+    expect(screen.getByText('History')).toBeDefined();
     expect(screen.queryByText('Share')).toBeNull();
     expect(screen.queryByText('Delete')).toBeNull();
     expect(screen.queryByText('Export PDF')).toBeNull();

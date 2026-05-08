@@ -24,6 +24,18 @@ export interface Share {
   createdAt: string;
 }
 
+export interface Version {
+  id: string;
+  title: string;
+  editedAt: string;
+  createdAt: string;
+  editedBy: {
+    id: string;
+    email: string;
+    name: string | null;
+  };
+}
+
 export function listDocuments() {
   return apiFetch<{ documents: Document[] }>('/api/documents');
 }
@@ -82,4 +94,17 @@ export function shareDocument(id: string, email: string) {
 
 export function revokeShare(id: string, userId: string) {
   return apiFetch<void>(`/api/documents/${id}/share/${userId}`, { method: 'DELETE' });
+}
+
+export function listVersions(id: string) {
+  return apiFetch<{ versions: Version[] }>(`/api/documents/${id}/versions`);
+}
+
+// Called from AuthContext.logout — server snapshots every doc the current user
+// was the last editor of since the last snapshot. Best-effort: failure should
+// not block the logout flow.
+export function snapshotMine() {
+  return apiFetch<{ snapshotsCreated: number }>(`/api/documents/snapshot-mine`, {
+    method: 'POST',
+  });
 }

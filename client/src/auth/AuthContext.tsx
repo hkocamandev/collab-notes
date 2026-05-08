@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 import * as authApi from './api';
 import type { User } from './api';
 import { setToken, clearToken, getToken } from '../lib/apiClient';
+import { snapshotMine } from '../documents/api';
 
 type Status = 'loading' | 'authenticated' | 'unauthenticated';
 
@@ -10,7 +11,9 @@ interface AuthState {
   status: Status;
   login: (email: string, password: string) => Promise<void>;
   register: (input: { email: string; password: string; name?: string }) => Promise<void>;
-  logout: () => void;
+  // Returns a promise so callers can await — but the snapshot call is a
+  // best-effort; we always log out even if the snapshot fails.
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -51,7 +54,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setStatus('authenticated');
   };
 
-  const logout: AuthState['logout'] = () => {
+  const logout: AuthState['logout'] = async () => {
+    // Best-effort version snapshot of every doc this user was the last editor
+    // of. Token must still be valid here, so we run BEFORE clearToken. Any
+    // failure (network, server) is swallowed — the user gets logged out either
+    // way; no-one wants a dead snapshot endpoint to lock them in.
+    try {
+      await snapshotMine();
+    } catch {
+      // intentionally swallowed
+    }
     clearToken();
     setUser(null);
     setStatus('unauthenticated');

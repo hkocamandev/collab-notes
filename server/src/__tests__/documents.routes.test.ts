@@ -23,6 +23,11 @@ vi.mock('../db.js', () => ({
       create: vi.fn(),
       deleteMany: vi.fn(),
     },
+    documentVersion: {
+      findMany: vi.fn(),
+      findFirst: vi.fn(),
+      create: vi.fn(),
+    },
   },
 }));
 
@@ -39,6 +44,9 @@ const mockShareFindMany = db.documentShare.findMany as ReturnType<typeof vi.fn>;
 const mockShareFindUnique = db.documentShare.findUnique as ReturnType<typeof vi.fn>;
 const mockShareCreate = db.documentShare.create as ReturnType<typeof vi.fn>;
 const mockShareDeleteMany = db.documentShare.deleteMany as ReturnType<typeof vi.fn>;
+const mockVersionFindMany = db.documentVersion.findMany as ReturnType<typeof vi.fn>;
+const mockVersionFindFirst = db.documentVersion.findFirst as ReturnType<typeof vi.fn>;
+const mockVersionCreate = db.documentVersion.create as ReturnType<typeof vi.fn>;
 
 const app = createApp();
 
@@ -76,6 +84,9 @@ beforeEach(() => {
   // Default: no shares for any query — individual tests override.
   mockShareFindUnique.mockResolvedValue(null);
   mockShareFindMany.mockResolvedValue([]);
+  // Default: no existing versions
+  mockVersionFindMany.mockResolvedValue([]);
+  mockVersionFindFirst.mockResolvedValue(null);
 });
 
 describe('GET /api/documents', () => {
@@ -444,5 +455,110 @@ describe('DELETE /api/documents/:id/share/:userId', () => {
       .delete('/api/documents/doc-1/share/user-3')
       .set(authHeader());
     expect(res.status).toBe(403);
+  });
+});
+
+// ── Versioning ─────────────────────────────────────────────────────────────
+
+describe('PATCH /api/documents/:id — lastEditedBy tracking', () => {
+  it('records lastEditedById and lastEditedAt on update', async () => {
+    mockDocFindFirst.mockResolvedValue(FAKE_DOC);
+    mockDocUpdate.mockResolvedValue({ ...FAKE_DOC, content: 'new' });
+    await request(app)
+      .patch('/api/documents/doc-1')
+      .set(authHeader())
+      .send({ content: 'new' });
+    const updateCall = mockDocUpdate.mock.calls[0]?.[0];
+    expect(updateCall?.data?.lastEditedById).toBe('user-1');
+    expect(updateCall?.data?.lastEditedAt).toBeInstanceOf(Date);
+  });
+});
+
+describe('GET /api/documents/:id/versions', () => {
+  it('200 owner sees versions', async () => {
+    mockDocFindFirst.mockResolvedValue(FAKE_DOC);
+    mockVersionFindMany.mockResolvedValue([
+      {
+        id: 'v1',
+        title: 'Older',
+        content: 'old',
+        editedAt: new Date('2026-05-01'),
+        createdAt: new Date('2026-05-01'),
+        editedBy: { id: 'user-1', email: 'test@example.com', name: 'Test' },
+      },
+    ]);
+    const res = await request(app).get('/api/documents/doc-1/versions').set(authHeader());
+    expect(res.status).toBe(200);
+    expect(res.body.versions).toHaveLength(1);
+    expect(res.body.versions[0].editedBy.email).toBe('test@example.com');
+  });
+
+  it('200 shared editor sees versions', async () => {
+    mockDocFindFirst.mockResolvedValue(SHARED_DOC);
+    mockShareFindUnique.mockResolvedValue({
+      id: 's1', documentId: 'doc-shared', userId: 'user-1', permission: 'edit',
+    });
+    mockVersionFindMany.mockResolvedValue([]);
+    const res = await request(app).get('/api/documents/doc-shared/versions').set(authHeader());
+    expect(res.status).toBe(200);
+    expect(res.body.versions).toEqual([]);
+  });
+
+  it('404 when no access', async () => {
+    mockDocFindFirst.mockResolvedValue(SHARED_DOC);
+    mockShareFindUnique.mockResolvedValue(null);
+    const res = await request(app).get('/api/documents/doc-shared/versions').set(authHeader());
+    expect(res.status).toBe(404);
+  });
+});
+
+describe('POST /api/documents/snapshot-mine', () => {
+  it('creates a version for each doc the user last edited', async () => {
+    const lastEditedAt = new Date('2026-05-09T10:00:00Z');
+    mockDocFindMany.mockResolvedValue([
+      { id: 'doc-1', title: 'A', content: 'aa', lastEditedAt },
+      { id: 'doc-2', title: 'B', content: 'bb', lastEditedAt },
+    ]);
+    mockVersionFindFirst.mockResolvedValue(null);
+    mockVersionCreate.mockResolvedValue({});
+    const res = await request(app).post('/api/documents/snapshot-mine').set(authHeader());
+    expect(res.status).toBe(200);
+    expect(res.body.snapshotsCreated).toBe(2);
+    expect(mockVersionCreate).toHaveBeenCalledTimes(2);
+  });
+
+  it('skips docs whose lastEditedAt already has a version', async () => {
+    const lastEditedAt = new Date('2026-05-09T10:00:00Z');
+    mockDocFindMany.mockResolvedValue([
+      { id: 'doc-1', title: 'A', content: 'aa', lastEditedAt },
+    ]);
+    mockVersionFindFirst.mockResolvedValue({ id: 'existing-version' });
+    const res = await request(app).post('/api/documents/snapshot-mine').set(authHeader());
+    expect(res.status).toBe(200);
+    expect(res.body.snapshotsCreated).toBe(0);
+    expect(mockVersionCreate).not.toHaveBeenCalled();
+  });
+
+  it('skips docs with null lastEditedAt', async () => {
+    mockDocFindMany.mockResolvedValue([
+      { id: 'doc-1', title: 'A', content: 'aa', lastEditedAt: null },
+    ]);
+    const res = await request(app).post('/api/documents/snapshot-mine').set(authHeader());
+    expect(res.status).toBe(200);
+    expect(res.body.snapshotsCreated).toBe(0);
+    expect(mockVersionCreate).not.toHaveBeenCalled();
+  });
+
+  it('queries only docs where current user is the last editor', async () => {
+    mockDocFindMany.mockResolvedValue([]);
+    await request(app).post('/api/documents/snapshot-mine').set(authHeader());
+    const findCall = mockDocFindMany.mock.calls[0]?.[0];
+    expect(findCall?.where?.lastEditedById).toBe('user-1');
+    expect(findCall?.where?.deletedAt).toBeNull();
+  });
+
+  it('401 without token', async () => {
+    const res = await request(app).post('/api/documents/snapshot-mine');
+    expect(res.status).toBe(401);
   });
 });

@@ -1092,6 +1092,19 @@ a:hover {
   flex-shrink: 0;
   transition: background 0.15s, border-color 0.15s;
 }
+
+.version-row {
+  align-items: flex-start;
+}
+.version-row .share-row-info {
+  flex-direction: column;
+  gap: 2px;
+}
+.version-row-time {
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin-top: 2px;
+}
 .share-row-permission:hover {
   background: var(--surface);
   border-color: var(--primary);
