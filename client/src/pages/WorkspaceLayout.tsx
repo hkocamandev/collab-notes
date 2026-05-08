@@ -3,6 +3,7 @@ import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext.js';
 import { Sidebar } from '../components/Sidebar.js';
 import ToastList, { type ToastItem } from '../components/Toast.js';
+import AskAi from '../components/AskAi.js';
 import {
   type Document,
   createDocument,
@@ -220,7 +221,9 @@ export default function WorkspaceLayout() {
         onDeleteDocument={id => void handleDelete(id)}
         onRestoreDocument={id => void handleRestore(id)}
         onPermanentDeleteDocument={id => void handlePermanentDelete(id)}
-      />
+      >
+        <AskAi />
+      </Sidebar>
       <div className="workspace-content">
         <header className="workspace-header">
           <div />

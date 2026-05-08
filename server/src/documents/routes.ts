@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from 'express';
 import { db } from '../db.js';
 import { requireAuth } from '../auth/middleware.js';
 import { createDocumentSchema, updateDocumentSchema, shareDocumentSchema } from './schemas.js';
+import { embed, docTextForEmbedding } from '../ai/embedding.js';
 
 const router = Router();
 
@@ -211,8 +212,29 @@ router.patch('/:id', async (req: Request, res: Response) => {
     },
     include: DOC_INCLUDE,
   });
+
+  // Refresh the document embedding when title/content changes. Best-effort:
+  // failures are logged but don't fail the PATCH (search would just fall back
+  // to the previous embedding). Fire-and-forget so the API response isn't
+  // gated on a ~50ms model call.
+  if (parsed.data.title !== undefined || parsed.data.content !== undefined) {
+    void refreshEmbedding(document.id, document.title, document.content).catch(err =>
+      console.warn('[ai] embedding refresh failed:', err),
+    );
+  }
+
   res.json({ document: shapeDocument(document, req.user!.id) });
 });
+
+async function refreshEmbedding(docId: string, title: string, content: string) {
+  const text = docTextForEmbedding(title, content);
+  if (!text.trim()) return; // empty doc — skip
+  const vector = await embed(text);
+  await db.document.update({
+    where: { id: docId },
+    data: { embedding: JSON.stringify(vector), embeddingAt: new Date() },
+  });
+}
 
 // List version history — owner OR shared editor.
 router.get('/:id/versions', async (req: Request, res: Response) => {

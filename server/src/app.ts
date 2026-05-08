@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import authRoutes from './auth/routes.js';
 import documentRoutes from './documents/routes.js';
+import aiRoutes from './ai/router.js';
 
 export function createApp() {
   const app = express();
@@ -19,6 +20,7 @@ export function createApp() {
 
   app.use('/api/auth', authRoutes);
   app.use('/api/documents', documentRoutes);
+  app.use('/api/ai', aiRoutes);
 
   return app;
 }

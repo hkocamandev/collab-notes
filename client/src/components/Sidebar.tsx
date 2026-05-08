@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import type { Document } from '../documents/api.js';
 
@@ -11,6 +12,8 @@ interface SidebarProps {
   onDeleteDocument: (id: string) => void;
   onRestoreDocument: (id: string) => void;
   onPermanentDeleteDocument: (id: string) => void;
+  /** Optional extra slot rendered below the trash section (e.g. Ask AI panel). */
+  children?: ReactNode;
 }
 
 export function Sidebar({
@@ -22,6 +25,7 @@ export function Sidebar({
   onDeleteDocument,
   onRestoreDocument,
   onPermanentDeleteDocument,
+  children,
 }: SidebarProps) {
   const navigate = useNavigate();
   const { id: currentId } = useParams<{ id: string }>();
@@ -128,6 +132,8 @@ export function Sidebar({
           ))}
         </div>
       )}
+
+      {children}
     </aside>
   );
 }
