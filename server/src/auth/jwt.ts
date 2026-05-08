@@ -1,7 +1,7 @@
 import jwt from 'jsonwebtoken';
 import { env } from '../env.js';
 
-const TOKEN_EXPIRY = '7d';
+const TOKEN_EXPIRY = '1h';
 
 export interface TokenPayload {
   sub: string;
