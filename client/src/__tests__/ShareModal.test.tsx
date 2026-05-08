@@ -14,11 +14,26 @@ vi.mock('../lib/yjsCache', () => ({
   signalRevoke: vi.fn(),
 }));
 
+// docEvents.broadcastDocEvent is a no-op in tests but we want to assert the
+// share-added payload contains sender info + doc title.
+vi.mock('../lib/docEvents', () => ({
+  broadcastDocEvent: vi.fn(),
+}));
+
+// ShareModal calls useAuth() to read the current user for the broadcast.
+vi.mock('../auth/AuthContext', () => ({
+  useAuth: () => ({
+    user: { id: 'u-sender', email: 'sender@x.com', name: 'Sender Name', plan: 'premium' },
+  }),
+}));
+
 import { listShares, shareDocument, revokeShare } from '../documents/api';
+import { broadcastDocEvent } from '../lib/docEvents';
 
 const mockListShares = vi.mocked(listShares);
 const mockShareDocument = vi.mocked(shareDocument);
 const mockRevokeShare = vi.mocked(revokeShare);
+const mockBroadcastDocEvent = vi.mocked(broadcastDocEvent);
 
 const onClose = vi.fn();
 
@@ -140,6 +155,32 @@ describe('ShareModal', () => {
     if (!backdrop) throw new Error('No backdrop');
     fireEvent.click(backdrop);
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it('broadcasts share-added with sender info + doc title after a successful share', async () => {
+    mockListShares.mockResolvedValueOnce({ shares: [] });
+    mockShareDocument.mockResolvedValue({
+      share: {
+        id: 's-new', userId: 'u-recipient', userEmail: 'bob@x.com', userName: null,
+        permission: 'edit', createdAt: '',
+      },
+    });
+    mockListShares.mockResolvedValueOnce({ shares: [] });
+    render(<ShareModal documentId="doc-1" documentTitle="Project Plan" onClose={onClose} />);
+
+    fireEvent.change(screen.getByLabelText('Email to share with'), {
+      target: { value: 'bob@x.com' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Share' }));
+
+    await waitFor(() => expect(mockBroadcastDocEvent).toHaveBeenCalled());
+    expect(mockBroadcastDocEvent).toHaveBeenCalledWith({
+      type: 'share-added',
+      forUserId: 'u-recipient',
+      senderName: 'Sender Name',
+      senderEmail: 'sender@x.com',
+      docTitle: 'Project Plan',
+    });
   });
 
   it('Editor pill jumps to end and closes modal when clicked', async () => {
