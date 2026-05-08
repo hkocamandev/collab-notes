@@ -81,7 +81,7 @@ describe('DocumentPage', () => {
     expect(mockOnUpdate).toHaveBeenCalledWith('doc-1', 'New Title');
   });
 
-  it('shows Saved after successful auto-save', async () => {
+  it('shows saved dot after successful auto-save', async () => {
     render(<DocumentPage />);
     await waitFor(() => screen.getByDisplayValue('Test Title'));
 
@@ -89,7 +89,7 @@ describe('DocumentPage', () => {
       target: { value: 'Updated' },
     });
 
-    await waitFor(() => screen.getByText('Saved'), { timeout: 3000 });
+    await waitFor(() => screen.getByLabelText('Saved'), { timeout: 3000 });
   });
 
   it('calls onDelete when Delete button clicked', async () => {

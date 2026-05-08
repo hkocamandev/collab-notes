@@ -17,12 +17,14 @@ export default function DocumentPage() {
   const [notFound, setNotFound] = useState(false);
 
   const loadedRef = useRef(false);
+  const lastSavedRef = useRef({ title: '', content: '' });
 
   useEffect(() => {
     if (!id) return;
     loadedRef.current = false;
     setNotFound(false);
     setDoc(null);
+    setSaveState('idle');
     void loadDoc(id);
   }, [id]);
 
@@ -32,20 +34,23 @@ export default function DocumentPage() {
       setDoc(res.document);
       setTitle(res.document.title);
       setContent(res.document.content);
+      lastSavedRef.current = { title: res.document.title, content: res.document.content };
       loadedRef.current = true;
     } catch {
       setNotFound(true);
     }
   }
 
-  // Debounced auto-save — only fires after initial load
+  // Debounced auto-save — only fires when content actually changed
   useEffect(() => {
     if (!loadedRef.current || !id) return;
+    if (title === lastSavedRef.current.title && content === lastSavedRef.current.content) return;
     setSaveState('saving');
     const timer = setTimeout(async () => {
       try {
         await updateDocument(id, { title, content });
         onUpdate(id, title);
+        lastSavedRef.current = { title, content };
         setSaveState('saved');
       } catch {
         setSaveState('idle');
@@ -77,10 +82,11 @@ export default function DocumentPage() {
   return (
     <div className="doc-page">
       <div className="doc-toolbar">
-        <span className={`save-status save-status--${saveState}`}>
-          {saveState === 'saving' && 'Saving…'}
-          {saveState === 'saved' && 'Saved'}
-        </span>
+        <span
+          className={`save-dot save-dot--${saveState}`}
+          title={saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'Saved' : undefined}
+          aria-label={saveState === 'saving' ? 'Saving' : saveState === 'saved' ? 'Saved' : undefined}
+        />
         <button
           className="btn-secondary btn-danger"
           onClick={() => void handleDelete()}
