@@ -1,8 +1,13 @@
 node_modules/
 dist/
 build/
+*.tsbuildinfo
 .env
 .env.local
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
 .DS_Store
 *.log
 .vscode/
