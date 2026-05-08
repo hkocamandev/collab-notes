@@ -3,7 +3,16 @@ import { AuthProvider } from './auth/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
-import DashboardPage from './pages/DashboardPage';
+import WorkspaceLayout from './pages/WorkspaceLayout';
+import DocumentPage from './pages/DocumentPage';
+
+function WorkspaceHome() {
+  return (
+    <div className="doc-empty">
+      <p className="muted">Select a document from the sidebar or create a new one.</p>
+    </div>
+  );
+}
 
 export default function App() {
   return (
@@ -16,10 +25,13 @@ export default function App() {
             path="/"
             element={
               <ProtectedRoute>
-                <DashboardPage />
+                <WorkspaceLayout />
               </ProtectedRoute>
             }
-          />
+          >
+            <Route index element={<WorkspaceHome />} />
+            <Route path="documents/:id" element={<DocumentPage />} />
+          </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
