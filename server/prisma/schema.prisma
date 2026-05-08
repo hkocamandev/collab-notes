@@ -33,6 +33,11 @@ model Document {
   lastEditedById String?
   lastEditedBy   User?             @relation("DocumentLastEditor", fields: [lastEditedById], references: [id])
   lastEditedAt   DateTime?
+  // Sentence embedding of (title + plaintext(content)). JSON-encoded number[]
+  // (SQLite has no native vector type). Used by the Ask AI feature for
+  // semantic similarity ranking. Recomputed on title/content change.
+  embedding      String?
+  embeddingAt    DateTime?
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt
   deletedAt      DateTime?
