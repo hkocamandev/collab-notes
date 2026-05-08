@@ -7,6 +7,7 @@ import FormatToolbar from '../components/FormatToolbar.js';
 import CollabEditor, { type AwarenessUser } from '../components/CollabEditor.js';
 import ErrorBoundary from '../components/ErrorBoundary.js';
 import ShareModal from '../components/ShareModal.js';
+import VersionHistoryModal from '../components/VersionHistoryModal.js';
 import { useAuth } from '../auth/AuthContext.js';
 import { useCollabTitle } from '../lib/yjsCache.js';
 import { broadcastDocEvent } from '../lib/docEvents.js';
@@ -34,6 +35,7 @@ function DocumentPageBody({ id }: { id: string }) {
   const [editor, setEditor] = useState<TiptapEditor | null>(null);
   const [presence, setPresence] = useState<AwarenessUser[]>([]);
   const [shareOpen, setShareOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   const loadedRef = useRef(false);
   const lastSavedRef = useRef({ title: '', content: '' });
@@ -159,6 +161,14 @@ function DocumentPageBody({ id }: { id: string }) {
               saveState === 'saving' ? 'Saving' : saveState === 'saved' ? 'Saved' : undefined
             }
           />
+          {/* History button: visible to anyone with access (owner OR editor). */}
+          <button
+            className="btn-secondary"
+            onClick={() => setHistoryOpen(true)}
+            aria-label="View version history"
+          >
+            History
+          </button>
           {doc.permission === 'owner' && (
             <>
               <button
@@ -205,6 +215,14 @@ function DocumentPageBody({ id }: { id: string }) {
             setDoc(prev => (prev ? { ...prev, shareCount: count } : prev))
           }
           onJumpToEnd={() => editor?.chain().focus('end').run()}
+        />
+      )}
+
+      {historyOpen && (
+        <VersionHistoryModal
+          documentId={id}
+          documentTitle={title}
+          onClose={() => setHistoryOpen(false)}
         />
       )}
 

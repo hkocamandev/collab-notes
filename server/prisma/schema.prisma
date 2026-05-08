@@ -8,26 +8,32 @@ datasource db {
 }
 
 model User {
-  id              String           @id @default(cuid())
-  email           String           @unique
-  passwordHash    String
-  name            String?
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
-  documents       Document[]
-  sharedDocuments DocumentShare[]
+  id                  String            @id @default(cuid())
+  email               String            @unique
+  passwordHash        String
+  name                String?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  documents           Document[]        @relation("DocumentOwner")
+  lastEditedDocuments Document[]        @relation("DocumentLastEditor")
+  sharedDocuments     DocumentShare[]
+  documentVersions    DocumentVersion[]
 }
 
 model Document {
-  id        String          @id @default(cuid())
-  title     String          @default("Untitled")
-  content   String          @default("[]")
-  userId    String
-  user      User            @relation(fields: [userId], references: [id])
-  createdAt DateTime        @default(now())
-  updatedAt DateTime        @updatedAt
-  deletedAt DateTime?
-  shares    DocumentShare[]
+  id             String            @id @default(cuid())
+  title          String            @default("Untitled")
+  content        String            @default("[]")
+  userId         String
+  user           User              @relation("DocumentOwner", fields: [userId], references: [id])
+  lastEditedById String?
+  lastEditedBy   User?             @relation("DocumentLastEditor", fields: [lastEditedById], references: [id])
+  lastEditedAt   DateTime?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  deletedAt      DateTime?
+  shares         DocumentShare[]
+  versions       DocumentVersion[]
 }
 
 model DocumentShare {
@@ -41,4 +47,18 @@ model DocumentShare {
 
   @@unique([documentId, userId])
   @@index([userId])
+}
+
+model DocumentVersion {
+  id         String   @id @default(cuid())
+  documentId String
+  title      String
+  content    String
+  editedById String
+  editedAt   DateTime
+  createdAt  DateTime @default(now())
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  editedBy   User     @relation(fields: [editedById], references: [id], onDelete: Cascade)
+
+  @@index([documentId, createdAt])
 }

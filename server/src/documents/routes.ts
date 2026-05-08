@@ -104,6 +104,41 @@ router.get('/trash', async (req: Request, res: Response) => {
   res.json({ documents: documents.map(d => shapeDocument(d, req.user!.id)) });
 });
 
+// Snapshot every doc where the current user was the last editor. Called by the
+// frontend just before logout so the user's session-end state is persisted as
+// a version. Skips docs that already have a version with the same `editedAt`
+// (no edits since the last snapshot) — keeps idle logouts from spamming
+// version rows. NOTE: must be declared before /:id otherwise Express captures
+// "snapshot-mine" as the document id.
+router.post('/snapshot-mine', async (req: Request, res: Response) => {
+  const userId = req.user!.id;
+  const docs = await db.document.findMany({
+    where: { lastEditedById: userId, deletedAt: null },
+    select: { id: true, title: true, content: true, lastEditedAt: true },
+  });
+
+  let created = 0;
+  for (const doc of docs) {
+    if (!doc.lastEditedAt) continue;
+    const existing = await db.documentVersion.findFirst({
+      where: { documentId: doc.id, editedAt: doc.lastEditedAt },
+      select: { id: true },
+    });
+    if (existing) continue;
+    await db.documentVersion.create({
+      data: {
+        documentId: doc.id,
+        title: doc.title,
+        content: doc.content,
+        editedById: userId,
+        editedAt: doc.lastEditedAt,
+      },
+    });
+    created++;
+  }
+  res.json({ snapshotsCreated: created });
+});
+
 // Create — always becomes owner of the new doc.
 router.post('/', async (req: Request, res: Response) => {
   const parsed = createDocumentSchema.safeParse(req.body);
@@ -130,6 +165,8 @@ router.get('/:id', async (req: Request, res: Response) => {
 });
 
 // Update title/content — owner or shared editor.
+// Tracks lastEditedBy / lastEditedAt so the logout-snapshot job knows whose
+// edits to capture and when.
 router.patch('/:id', async (req: Request, res: Response) => {
   const parsed = updateDocumentSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -148,10 +185,39 @@ router.patch('/:id', async (req: Request, res: Response) => {
     data: {
       ...(parsed.data.title !== undefined && { title: parsed.data.title }),
       ...(parsed.data.content !== undefined && { content: parsed.data.content }),
+      lastEditedById: req.user!.id,
+      lastEditedAt: new Date(),
     },
     include: DOC_INCLUDE,
   });
   res.json({ document: shapeDocument(document, req.user!.id) });
+});
+
+// List version history — owner OR shared editor.
+router.get('/:id/versions', async (req: Request, res: Response) => {
+  const { doc } = await findAccessibleDoc(req.params.id!, req.user!.id);
+  if (!doc) {
+    res.status(404).json({ error: 'Document not found' });
+    return;
+  }
+  const versions = await db.documentVersion.findMany({
+    where: { documentId: req.params.id! },
+    include: { editedBy: { select: { id: true, email: true, name: true } } },
+    orderBy: { createdAt: 'desc' },
+  });
+  res.json({
+    versions: versions.map(v => ({
+      id: v.id,
+      title: v.title,
+      editedAt: v.editedAt,
+      createdAt: v.createdAt,
+      editedBy: {
+        id: v.editedBy.id,
+        email: v.editedBy.email,
+        name: v.editedBy.name,
+      },
+    })),
+  });
 });
 
 // Helper: collect userIds we shared with so the client can broadcast cross-tab
