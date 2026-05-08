@@ -14,6 +14,9 @@ interface AuthState {
   // Returns a promise so callers can await — but the snapshot call is a
   // best-effort; we always log out even if the snapshot fails.
   logout: () => Promise<void>;
+  // Upgrade the current user's plan to "premium". Updates context state on
+  // success; throws on failure so the caller can show an error.
+  upgrade: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -69,8 +72,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setStatus('unauthenticated');
   };
 
+  const upgrade: AuthState['upgrade'] = async () => {
+    const { user: updated } = await authApi.upgradePlan();
+    setUser(updated);
+  };
+
   return (
-    <AuthContext.Provider value={{ user, status, login, register, logout }}>
+    <AuthContext.Provider value={{ user, status, login, register, logout, upgrade }}>
       {children}
     </AuthContext.Provider>
   );

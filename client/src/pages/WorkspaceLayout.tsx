@@ -21,9 +21,15 @@ export interface WorkspaceOutletContext {
   onRevokedFromDoc: (id: string) => void;
 }
 
+// Mirrors the server's basic-plan caps. Kept here too so the UI can render
+// "3/5" hints and disable buttons before the user even tries the action.
+const BASIC_DOC_LIMIT = 5;
+
 export default function WorkspaceLayout() {
-  const { user, logout } = useAuth();
+  const { user, logout, upgrade } = useAuth();
   const currentUserId = user?.id ?? '';
+  const isBasic = user?.plan === 'basic';
+  const [upgrading, setUpgrading] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   // Owner-only docs (full control)
@@ -162,12 +168,27 @@ export default function WorkspaceLayout() {
     setSharedDocs(prev => prev.filter(d => d.id !== id));
   }
 
+  const atDocumentLimit = isBasic && documents.length >= BASIC_DOC_LIMIT;
+
+  async function handleUpgrade() {
+    setUpgrading(true);
+    try {
+      await upgrade();
+    } catch {
+      // upgrade endpoint should be near-instant; surface the failure inline
+      // via the disabled button reverting. Reload as a fallback.
+    } finally {
+      setUpgrading(false);
+    }
+  }
+
   return (
     <div className="workspace">
       <Sidebar
         documents={documents}
         sharedDocs={sharedDocs}
         trashDocs={trashDocs}
+        atDocumentLimit={atDocumentLimit}
         onCreateDocument={() => void handleCreate()}
         onDeleteDocument={id => void handleDelete(id)}
         onRestoreDocument={id => void handleRestore(id)}
@@ -177,6 +198,27 @@ export default function WorkspaceLayout() {
         <header className="workspace-header">
           <div />
           <div className="dashboard-user">
+            {isBasic ? (
+              <span
+                className="plan-badge plan-badge--basic"
+                title="Basic: max 5 documents, max 1 share per document"
+              >
+                Basic · {documents.length}/{BASIC_DOC_LIMIT} docs
+              </span>
+            ) : (
+              <span className="plan-badge plan-badge--premium" title="Premium: unlimited">
+                Premium ✦
+              </span>
+            )}
+            {isBasic && (
+              <button
+                className="btn-primary btn-upgrade"
+                onClick={() => void handleUpgrade()}
+                disabled={upgrading}
+              >
+                {upgrading ? 'Upgrading…' : 'Upgrade'}
+              </button>
+            )}
             <span className="muted">{user?.name ?? user?.email}</span>
             <button onClick={logout} className="btn-secondary">
               Logout

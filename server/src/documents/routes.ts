@@ -139,12 +139,33 @@ router.post('/snapshot-mine', async (req: Request, res: Response) => {
   res.json({ snapshotsCreated: created });
 });
 
-// Create — always becomes owner of the new doc.
+// Plan limits (only basic; premium has no caps). Centralised so the API and
+// future admin/billing code share the same numbers.
+const BASIC_DOC_LIMIT = 5;
+const BASIC_SHARES_PER_DOC = 1;
+
+// Create — always becomes owner of the new doc. Basic users are capped at
+// BASIC_DOC_LIMIT active (non-trash) owned documents.
 router.post('/', async (req: Request, res: Response) => {
   const parsed = createDocumentSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: 'Invalid input' });
     return;
+  }
+
+  if (req.user!.plan === 'basic') {
+    const activeOwned = await db.document.count({
+      where: { userId: req.user!.id, deletedAt: null },
+    });
+    if (activeOwned >= BASIC_DOC_LIMIT) {
+      res.status(403).json({
+        error: `Basic plan is limited to ${BASIC_DOC_LIMIT} documents. Upgrade to Premium for unlimited.`,
+        limit: BASIC_DOC_LIMIT,
+        plan: 'basic',
+        kind: 'document-limit',
+      });
+      return;
+    }
   }
 
   const document = await db.document.create({
@@ -353,6 +374,23 @@ router.post('/:id/share', async (req: Request, res: Response) => {
   if (targetUser.id === req.user!.id) {
     res.status(400).json({ error: 'Cannot share a document with yourself' });
     return;
+  }
+
+  // Plan limit: basic users can have at most BASIC_SHARES_PER_DOC share
+  // recipients per document.
+  if (req.user!.plan === 'basic') {
+    const existingShareCount = await db.documentShare.count({
+      where: { documentId: req.params.id! },
+    });
+    if (existingShareCount >= BASIC_SHARES_PER_DOC) {
+      res.status(403).json({
+        error: `Basic plan allows only ${BASIC_SHARES_PER_DOC} share per document. Upgrade to Premium for unlimited shares.`,
+        limit: BASIC_SHARES_PER_DOC,
+        plan: 'basic',
+        kind: 'share-limit',
+      });
+      return;
+    }
   }
 
   try {

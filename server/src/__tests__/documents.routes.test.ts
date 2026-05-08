@@ -16,12 +16,14 @@ vi.mock('../db.js', () => ({
       create: vi.fn(),
       update: vi.fn(),
       delete: vi.fn(),
+      count: vi.fn(),
     },
     documentShare: {
       findMany: vi.fn(),
       findUnique: vi.fn(),
       create: vi.fn(),
       deleteMany: vi.fn(),
+      count: vi.fn(),
     },
     documentVersion: {
       findMany: vi.fn(),
@@ -44,14 +46,18 @@ const mockShareFindMany = db.documentShare.findMany as ReturnType<typeof vi.fn>;
 const mockShareFindUnique = db.documentShare.findUnique as ReturnType<typeof vi.fn>;
 const mockShareCreate = db.documentShare.create as ReturnType<typeof vi.fn>;
 const mockShareDeleteMany = db.documentShare.deleteMany as ReturnType<typeof vi.fn>;
+const mockDocCount = db.document.count as ReturnType<typeof vi.fn>;
+const mockShareCount = db.documentShare.count as ReturnType<typeof vi.fn>;
 const mockVersionFindMany = db.documentVersion.findMany as ReturnType<typeof vi.fn>;
 const mockVersionFindFirst = db.documentVersion.findFirst as ReturnType<typeof vi.fn>;
 const mockVersionCreate = db.documentVersion.create as ReturnType<typeof vi.fn>;
 
 const app = createApp();
 
-const FAKE_USER = { id: 'user-1', email: 'test@example.com', name: 'Test' };
-const OTHER_USER = { id: 'user-2', email: 'other@example.com', name: 'Other' };
+// Default to premium so existing tests aren't accidentally tripped by the new
+// basic limits. Tests that exercise basic limits override the mock locally.
+const FAKE_USER = { id: 'user-1', email: 'test@example.com', name: 'Test', plan: 'premium' };
+const OTHER_USER = { id: 'user-2', email: 'other@example.com', name: 'Other', plan: 'premium' };
 
 const FAKE_DOC = {
   id: 'doc-1',
@@ -560,5 +566,115 @@ describe('POST /api/documents/snapshot-mine', () => {
   it('401 without token', async () => {
     const res = await request(app).post('/api/documents/snapshot-mine');
     expect(res.status).toBe(401);
+  });
+});
+
+// ── Plan limits ────────────────────────────────────────────────────────────
+
+describe('POST /api/documents — basic plan limits', () => {
+  it('403 when basic user already has 5 active owned documents', async () => {
+    // Override default mock to return a basic user
+    mockUserFindUnique.mockResolvedValue({ ...FAKE_USER, plan: 'basic' });
+    mockDocCount.mockResolvedValue(5);
+
+    const res = await request(app)
+      .post('/api/documents')
+      .set(authHeader())
+      .send({ title: 'Sixth' });
+
+    expect(res.status).toBe(403);
+    expect(res.body.kind).toBe('document-limit');
+    expect(res.body.limit).toBe(5);
+    expect(mockDocCreate).not.toHaveBeenCalled();
+  });
+
+  it('201 when basic user has fewer than 5 owned documents', async () => {
+    mockUserFindUnique.mockResolvedValue({ ...FAKE_USER, plan: 'basic' });
+    mockDocCount.mockResolvedValue(4);
+    mockDocCreate.mockResolvedValue(FAKE_DOC);
+
+    const res = await request(app)
+      .post('/api/documents')
+      .set(authHeader())
+      .send({ title: 'Fifth' });
+
+    expect(res.status).toBe(201);
+  });
+
+  it('201 for premium user regardless of count', async () => {
+    // FAKE_USER is premium by default; count mock not even consulted
+    mockUserFindUnique.mockResolvedValue(FAKE_USER);
+    mockDocCreate.mockResolvedValue(FAKE_DOC);
+
+    const res = await request(app)
+      .post('/api/documents')
+      .set(authHeader())
+      .send({ title: 'Hundredth' });
+
+    expect(res.status).toBe(201);
+    expect(mockDocCount).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /api/documents/:id/share — basic plan limit', () => {
+  it('403 when basic owner already has 1 share', async () => {
+    mockUserFindUnique.mockResolvedValueOnce({ ...FAKE_USER, plan: 'basic' });
+    mockDocFindUnique.mockResolvedValue({ id: 'doc-1', userId: 'user-1' });
+    // Second call resolves the target user
+    mockUserFindUnique.mockResolvedValueOnce(OTHER_USER);
+    mockShareCount.mockResolvedValue(1);
+
+    const res = await request(app)
+      .post('/api/documents/doc-1/share')
+      .set(authHeader())
+      .send({ email: 'other@example.com' });
+
+    expect(res.status).toBe(403);
+    expect(res.body.kind).toBe('share-limit');
+    expect(res.body.limit).toBe(1);
+    expect(mockShareCreate).not.toHaveBeenCalled();
+  });
+
+  it('201 when basic owner has 0 existing shares', async () => {
+    mockUserFindUnique.mockResolvedValueOnce({ ...FAKE_USER, plan: 'basic' });
+    mockDocFindUnique.mockResolvedValue({ id: 'doc-1', userId: 'user-1' });
+    mockUserFindUnique.mockResolvedValueOnce(OTHER_USER);
+    mockShareCount.mockResolvedValue(0);
+    mockShareCreate.mockResolvedValue({
+      id: 'share-1',
+      documentId: 'doc-1',
+      userId: 'user-2',
+      permission: 'edit',
+      createdAt: new Date(),
+    });
+
+    const res = await request(app)
+      .post('/api/documents/doc-1/share')
+      .set(authHeader())
+      .send({ email: 'other@example.com' });
+
+    expect(res.status).toBe(201);
+  });
+
+  it('201 for premium owner regardless of share count', async () => {
+    // FAKE_USER is premium by default
+    mockUserFindUnique.mockResolvedValueOnce(FAKE_USER);
+    mockDocFindUnique.mockResolvedValue({ id: 'doc-1', userId: 'user-1' });
+    mockUserFindUnique.mockResolvedValueOnce(OTHER_USER);
+    mockShareCreate.mockResolvedValue({
+      id: 'share-99',
+      documentId: 'doc-1',
+      userId: 'user-2',
+      permission: 'edit',
+      createdAt: new Date(),
+    });
+
+    const res = await request(app)
+      .post('/api/documents/doc-1/share')
+      .set(authHeader())
+      .send({ email: 'other@example.com' });
+
+    expect(res.status).toBe(201);
+    expect(mockShareCount).not.toHaveBeenCalled();
   });
 });

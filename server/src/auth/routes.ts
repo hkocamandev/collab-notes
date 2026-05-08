@@ -28,7 +28,7 @@ router.post('/register', async (req: Request, res: Response) => {
   const passwordHash = await hashPassword(password);
   const user = await db.user.create({
     data: { email, passwordHash, name: name ?? null },
-    select: { id: true, email: true, name: true, createdAt: true },
+    select: { id: true, email: true, name: true, plan: true, createdAt: true },
   });
 
   const token = signToken(user.id);
@@ -62,6 +62,7 @@ router.post('/login', async (req: Request, res: Response) => {
       id: user.id,
       email: user.email,
       name: user.name,
+      plan: user.plan,
       createdAt: user.createdAt,
     },
   });
@@ -69,6 +70,18 @@ router.post('/login', async (req: Request, res: Response) => {
 
 router.get('/me', requireAuth, (req: Request, res: Response) => {
   res.json({ user: req.user });
+});
+
+// Self-serve upgrade to premium. No payment integration in this scope —
+// the assignment treats the toggle as instantaneous. Premium removes the
+// 5-document and 1-share-per-doc caps that basic users have.
+router.post('/upgrade', requireAuth, async (req: Request, res: Response) => {
+  const updated = await db.user.update({
+    where: { id: req.user!.id },
+    data: { plan: 'premium' },
+    select: { id: true, email: true, name: true, plan: true, createdAt: true },
+  });
+  res.json({ user: updated });
 });
 
 export default router;

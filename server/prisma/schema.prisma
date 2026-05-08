@@ -12,6 +12,10 @@ model User {
   email               String            @unique
   passwordHash        String
   name                String?
+  // "basic" (default) or "premium". SQLite has no native enums; we keep this
+  // as a string + validate at the API layer. Basic users are capped at 5
+  // active owned documents and 1 share recipient per doc; premium has no caps.
+  plan                String            @default("basic")
   createdAt           DateTime          @default(now())
   updatedAt           DateTime          @updatedAt
   documents           Document[]        @relation("DocumentOwner")

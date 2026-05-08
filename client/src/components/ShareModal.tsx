@@ -68,7 +68,15 @@ export default function ShareModal({
         if (err.status === 404) setError('No user with that email is registered.');
         else if (err.status === 409) setError('This document is already shared with that user.');
         else if (err.status === 400) setError('Invalid email or you cannot share with yourself.');
-        else setError(err.message || 'Could not share document.');
+        else if (
+          err.status === 403 &&
+          typeof err.body === 'object' &&
+          err.body !== null &&
+          'kind' in err.body &&
+          (err.body as { kind?: string }).kind === 'share-limit'
+        ) {
+          setError('Basic plan allows only 1 share per document. Upgrade to Premium for unlimited shares.');
+        } else setError(err.message || 'Could not share document.');
       } else {
         setError('Could not share document.');
       }

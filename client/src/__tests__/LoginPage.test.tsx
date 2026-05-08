@@ -19,6 +19,7 @@ function renderLoginPage() {
     login: mockLogin,
     register: vi.fn(),
     logout: vi.fn(),
+    upgrade: vi.fn(),
   });
   return render(
     <MemoryRouter>

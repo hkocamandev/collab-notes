@@ -8,6 +8,7 @@ vi.mock('../db.js', () => ({
     user: {
       findUnique: vi.fn(),
       create: vi.fn(),
+      update: vi.fn(),
     },
   },
 }));
@@ -25,6 +26,7 @@ import { signToken } from '../auth/jwt.js';
 // Tip kolaylığı için cast
 const mockFindUnique = db.user.findUnique as ReturnType<typeof vi.fn>;
 const mockCreate = db.user.create as ReturnType<typeof vi.fn>;
+const mockUpdate = db.user.update as ReturnType<typeof vi.fn>;
 const mockVerifyPassword = verifyPassword as ReturnType<typeof vi.fn>;
 
 const app = createApp();
@@ -34,6 +36,7 @@ const FAKE_USER = {
   email: 'test@example.com',
   name: 'Test User',
   passwordHash: '$hashed-password',
+  plan: 'basic',
   createdAt: new Date(),
   updatedAt: new Date(),
 };
@@ -47,6 +50,7 @@ describe('POST /api/auth/register', () => {
       id: FAKE_USER.id,
       email: FAKE_USER.email,
       name: FAKE_USER.name,
+      plan: 'basic',
       createdAt: FAKE_USER.createdAt,
     });
 
@@ -149,12 +153,13 @@ describe('GET /api/auth/me', () => {
     expect(res.status).toBe(401);
   });
 
-  it('200 + user for valid token', async () => {
+  it('200 + user for valid token (includes plan)', async () => {
     const token = signToken(FAKE_USER.id);
     mockFindUnique.mockResolvedValue({
       id: FAKE_USER.id,
       email: FAKE_USER.email,
       name: FAKE_USER.name,
+      plan: 'basic',
     });
 
     const res = await request(app)
@@ -164,6 +169,7 @@ describe('GET /api/auth/me', () => {
     expect(res.status).toBe(200);
     expect(res.body.user.id).toBe(FAKE_USER.id);
     expect(res.body.user.email).toBe(FAKE_USER.email);
+    expect(res.body.user.plan).toBe('basic');
   });
 
   it('401 when token user no longer exists in DB', async () => {
@@ -174,6 +180,46 @@ describe('GET /api/auth/me', () => {
       .get('/api/auth/me')
       .set('Authorization', `Bearer ${token}`);
 
+    expect(res.status).toBe(401);
+  });
+});
+
+describe('POST /api/auth/upgrade', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('200 + user with plan="premium"', async () => {
+    const token = signToken(FAKE_USER.id);
+    // Middleware lookup
+    mockFindUnique.mockResolvedValue({
+      id: FAKE_USER.id,
+      email: FAKE_USER.email,
+      name: FAKE_USER.name,
+      plan: 'basic',
+    });
+    mockUpdate.mockResolvedValue({
+      id: FAKE_USER.id,
+      email: FAKE_USER.email,
+      name: FAKE_USER.name,
+      plan: 'premium',
+      createdAt: FAKE_USER.createdAt,
+    });
+
+    const res = await request(app)
+      .post('/api/auth/upgrade')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.user.plan).toBe('premium');
+    expect(mockUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: FAKE_USER.id },
+        data: { plan: 'premium' },
+      }),
+    );
+  });
+
+  it('401 without token', async () => {
+    const res = await request(app).post('/api/auth/upgrade');
     expect(res.status).toBe(401);
   });
 });

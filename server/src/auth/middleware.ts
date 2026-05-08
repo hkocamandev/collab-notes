@@ -18,7 +18,7 @@ export async function requireAuth(
     const { sub } = verifyToken(token);
     const user = await db.user.findUnique({
       where: { id: sub },
-      select: { id: true, email: true, name: true },
+      select: { id: true, email: true, name: true, plan: true },
     });
     if (!user) {
       res.status(401).json({ error: 'User not found' });

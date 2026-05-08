@@ -5,6 +5,8 @@ interface SidebarProps {
   documents: Document[];
   sharedDocs: Document[];
   trashDocs: Document[];
+  /** Basic users hit a 5-document cap; we disable the create button when they do. */
+  atDocumentLimit?: boolean;
   onCreateDocument: () => void;
   onDeleteDocument: (id: string) => void;
   onRestoreDocument: (id: string) => void;
@@ -15,6 +17,7 @@ export function Sidebar({
   documents,
   sharedDocs,
   trashDocs,
+  atDocumentLimit = false,
   onCreateDocument,
   onDeleteDocument,
   onRestoreDocument,
@@ -33,9 +36,23 @@ export function Sidebar({
       </div>
 
       <div className="sidebar-section">
-        <button className="btn-new-doc" onClick={onCreateDocument}>
+        <button
+          className="btn-new-doc"
+          onClick={onCreateDocument}
+          disabled={atDocumentLimit}
+          title={
+            atDocumentLimit
+              ? 'Document limit reached. Upgrade to Premium for unlimited docs.'
+              : undefined
+          }
+        >
           + New document
         </button>
+        {atDocumentLimit && (
+          <p className="sidebar-limit-hint">
+            5/5 used — upgrade to add more
+          </p>
+        )}
       </div>
 
       <nav className="sidebar-nav">
