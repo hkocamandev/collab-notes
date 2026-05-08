@@ -1,0 +1,36 @@
+# Keep the build context lean (and avoid leaking host secrets). Both
+# server/Dockerfile and client/Dockerfile use the repo root as context.
+.git
+.github
+node_modules
+**/node_modules
+**/dist
+**/.vite
+client/.vite
+
+# Local-only personal files (also under .git/info/exclude). Never copy them
+# into images.
+CLAUDE.md
+claude.md
+Claude.md
+requirements.txt
+progress.txt
+
+# Env files — secrets stay on the host
+.env
+.env.local
+.env.*.local
+
+# Test/build artifacts
+**/*.tsbuildinfo
+**/coverage
+
+# SQLite databases — must not be baked into the image
+**/*.db
+**/*.db-journal
+**/*.db-wal
+**/*.db-shm
+
+# Misc
+.DS_Store
+*.log

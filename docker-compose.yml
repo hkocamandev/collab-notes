@@ -1,0 +1,55 @@
+# Three-service stack: REST API, Yjs WebSocket server, and the SPA served by
+# nginx. Run with `docker compose up --build` after copying .env.example to
+# .env and setting JWT_SECRET. Compose v2+ — no top-level `version:` key.
+
+services:
+  # Express API on :4000. Runs `prisma migrate deploy` on startup; the
+  # SQLite file lives in the named volume so data survives `docker compose
+  # down` (use `down -v` to wipe).
+  api:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    environment:
+      NODE_ENV: production
+      PORT: "4000"
+      DATABASE_URL: file:/data/dev.db
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in .env}
+    ports:
+      - "4000:4000"
+    volumes:
+      - api_data:/data
+    restart: unless-stopped
+
+  # Yjs WebSocket server on :4001. Same image as `api` with a different
+  # command. In-memory rooms (no persistence needed). YWS_START=1 unlocks
+  # the listen() call inside src/yws.ts that's gated for test isolation.
+  yws:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    command: ["node", "dist/yws.js"]
+    environment:
+      NODE_ENV: production
+      YWS_START: "1"
+      YWS_PORT: "4001"
+    ports:
+      - "4001:4001"
+    restart: unless-stopped
+
+  # nginx serves the built SPA at :5173 (host) and reverse-proxies /api/*
+  # to the api service. The client connects to yws via ws://localhost:4001
+  # (host port), same as in local dev.
+  client:
+    build:
+      context: .
+      dockerfile: client/Dockerfile
+    ports:
+      - "5173:80"
+    depends_on:
+      - api
+      - yws
+    restart: unless-stopped
+
+volumes:
+  api_data:
