@@ -84,7 +84,7 @@ export default function DocumentPage() {
       <div className="doc-toolbar">
         <span
           className={`save-dot save-dot--${saveState}`}
-          title={saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'Saved' : undefined}
+          data-tooltip={saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'Saved' : undefined}
           aria-label={saveState === 'saving' ? 'Saving' : saveState === 'saved' ? 'Saved' : undefined}
         />
         <button
