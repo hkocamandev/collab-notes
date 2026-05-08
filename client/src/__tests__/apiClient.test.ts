@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { getToken, setToken, clearToken, ApiError, apiFetch } from '../lib/apiClient';
 
 describe('token helpers', () => {
-  beforeEach(() => localStorage.clear());
+  beforeEach(() => sessionStorage.clear());
 
   it('getToken returns null when nothing stored', () => {
     expect(getToken()).toBeNull();
@@ -36,7 +36,7 @@ describe('ApiError', () => {
 });
 
 describe('apiFetch', () => {
-  beforeEach(() => localStorage.clear());
+  beforeEach(() => sessionStorage.clear());
   afterEach(() => vi.restoreAllMocks());
 
   // vi.stubGlobal 'fetch'i değiştirir; dönen değil, atadığımız mock'u kullanıyoruz

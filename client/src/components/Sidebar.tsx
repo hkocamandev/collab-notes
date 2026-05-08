@@ -3,6 +3,7 @@ import type { Document } from '../documents/api.js';
 
 interface SidebarProps {
   documents: Document[];
+  sharedDocs: Document[];
   trashDocs: Document[];
   onCreateDocument: () => void;
   onDeleteDocument: (id: string) => void;
@@ -12,6 +13,7 @@ interface SidebarProps {
 
 export function Sidebar({
   documents,
+  sharedDocs,
   trashDocs,
   onCreateDocument,
   onDeleteDocument,
@@ -62,6 +64,26 @@ export function Sidebar({
           ))
         )}
       </nav>
+
+      {sharedDocs.length > 0 && (
+        <div className="sidebar-shared">
+          <p className="sidebar-section-label">Shared with me</p>
+          {sharedDocs.map(doc => (
+            <div
+              key={doc.id}
+              className={`sidebar-item sidebar-item--shared${doc.id === currentId ? ' active' : ''}`}
+              onClick={() => navigate(`/documents/${doc.id}`)}
+            >
+              <span className="sidebar-item-title">{doc.title || 'Untitled'}</span>
+              {doc.ownerEmail && (
+                <span className="sidebar-item-meta" title={`Shared by ${doc.ownerEmail}`}>
+                  by {doc.ownerName ?? doc.ownerEmail}
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
 
       {trashDocs.length > 0 && (
         <div className="sidebar-trash">

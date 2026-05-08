@@ -1,109 +1,47 @@
-import { useEffect, useReducer, useRef, useState } from 'react';
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { useNavigate, useOutletContext, useParams } from 'react-router-dom';
-import { useEditor } from '@tiptap/react';
-import { Extension } from '@tiptap/core';
-import StarterKit from '@tiptap/starter-kit';
-import Placeholder from '@tiptap/extension-placeholder';
-import Underline from '@tiptap/extension-underline';
-import TaskList from '@tiptap/extension-task-list';
-import TaskItem from '@tiptap/extension-task-item';
-import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
-import Link from '@tiptap/extension-link';
-import CharacterCount from '@tiptap/extension-character-count';
-import Typography from '@tiptap/extension-typography';
-import { createLowlight, common } from 'lowlight';
+import type { Editor as TiptapEditor } from '@tiptap/core';
 import { type Document, getDocument, updateDocument } from '../documents/api.js';
 import type { WorkspaceOutletContext } from './WorkspaceLayout.js';
-import Editor from '../components/Editor.js';
 import FormatToolbar from '../components/FormatToolbar.js';
-import SlashCommand from '../extensions/SlashCommand.js';
-
-const lowlight = createLowlight(common);
-
-// Intercepts Tab so it inserts spaces instead of shifting browser focus.
-// Priority 50 runs after StarterKit (100), so list Tab-indent still works.
-const TabKey = Extension.create({
-  name: 'tabKey',
-  priority: 50,
-  addKeyboardShortcuts() {
-    return {
-      Tab: () => {
-        if (this.editor.isActive('codeBlock')) {
-          return this.editor.commands.insertContent('\t');
-        }
-        return this.editor.commands.insertContent('  ');
-      },
-    };
-  },
-});
+import CollabEditor, { type AwarenessUser } from '../components/CollabEditor.js';
+import ErrorBoundary from '../components/ErrorBoundary.js';
+import ShareModal from '../components/ShareModal.js';
+import { useAuth } from '../auth/AuthContext.js';
+import { useCollabTitle } from '../lib/yjsCache.js';
+import { broadcastDocEvent } from '../lib/docEvents.js';
 
 type SaveState = 'idle' | 'saving' | 'saved';
 
 export default function DocumentPage() {
   const { id } = useParams<{ id: string }>();
-  const { onDelete, onUpdate } = useOutletContext<WorkspaceOutletContext>();
+  if (!id) return null;
+  // key={id} ensures all child state (including the Yjs cache acquire keyed by id)
+  // resets when navigating between documents.
+  return <DocumentPageBody key={id} id={id} />;
+}
+
+function DocumentPageBody({ id }: { id: string }) {
+  const { onDelete, onUpdate, onRevokedFromDoc } = useOutletContext<WorkspaceOutletContext>();
+  const { user } = useAuth();
   const navigate = useNavigate();
 
   const [doc, setDoc] = useState<Document | null>(null);
-  const [title, setTitle] = useState('');
+  const [title, setTitle, seedTitleIfEmpty] = useCollabTitle(id);
   const [content, setContent] = useState('');
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const [notFound, setNotFound] = useState(false);
+  const [editor, setEditor] = useState<TiptapEditor | null>(null);
+  const [presence, setPresence] = useState<AwarenessUser[]>([]);
+  const [shareOpen, setShareOpen] = useState(false);
 
   const loadedRef = useRef(false);
   const lastSavedRef = useRef({ title: '', content: '' });
 
-  // Forces re-render on cursor move so FormatToolbar active states stay fresh
+  // forceUpdate is called by CollabEditor on selection changes to keep FormatToolbar active states fresh
   const [, forceUpdate] = useReducer((x: number) => x + 1, 0);
 
-  const editor = useEditor({
-    extensions: [
-      StarterKit.configure({ codeBlock: false }),
-      Placeholder.configure({ placeholder: 'Start writing… or type / for commands' }),
-      Underline,
-      TaskList,
-      TaskItem.configure({ nested: true }),
-      CodeBlockLowlight.configure({ lowlight, defaultLanguage: 'javascript' }),
-      Link.configure({ openOnClick: false, HTMLAttributes: { rel: 'noopener noreferrer' } }),
-      CharacterCount,
-      Typography,
-      SlashCommand,
-      TabKey,
-    ],
-    content: '',
-    onUpdate: ({ editor }) => {
-      if (!loadedRef.current) return;
-      setContent(editor.getHTML());
-      // Scroll workspace-main so the cursor stays visible
-      requestAnimationFrame(() => {
-        const { from } = editor.state.selection;
-        const coords = editor.view.coordsAtPos(from);
-        const scrollEl = document.querySelector<HTMLElement>('.workspace-main');
-        if (!scrollEl) return;
-        const rect = scrollEl.getBoundingClientRect();
-        const margin = 40;
-        if (coords.bottom > rect.bottom - margin) {
-          scrollEl.scrollTop += coords.bottom - rect.bottom + margin;
-        }
-        if (coords.top < rect.top + margin) {
-          scrollEl.scrollTop -= rect.top - coords.top + margin;
-        }
-      });
-    },
-    onSelectionUpdate: () => forceUpdate(),
-  });
-
-  // Seed editor with doc content each time the document changes
   useEffect(() => {
-    if (!editor || !doc) return;
-    const prev = loadedRef.current;
-    loadedRef.current = false;               // suppress onUpdate during setContent
-    editor.commands.setContent(doc.content || '');
-    loadedRef.current = prev;
-  }, [editor, doc?.id]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    if (!id) return;
     loadedRef.current = false;
     setNotFound(false);
     setDoc(null);
@@ -115,7 +53,9 @@ export default function DocumentPage() {
     try {
       const res = await getDocument(docId);
       setDoc(res.document);
-      setTitle(res.document.title);
+      // Seed Y.Text 'title' from DB only if no other tab has populated it yet.
+      // Cross-tab updates flow through Yjs after this.
+      seedTitleIfEmpty(res.document.title);
       setContent(res.document.content);
       lastSavedRef.current = { title: res.document.title, content: res.document.content };
       loadedRef.current = true;
@@ -124,9 +64,10 @@ export default function DocumentPage() {
     }
   }
 
-  // Debounced auto-save
+  // Debounced auto-save. `title` updates whenever any tab edits Y.Text 'title',
+  // so this still saves cross-tab changes to DB (idempotent if multiple tabs save).
   useEffect(() => {
-    if (!loadedRef.current || !id) return;
+    if (!loadedRef.current) return;
     if (title === lastSavedRef.current.title && content === lastSavedRef.current.content) return;
     setSaveState('saving');
     const timer = setTimeout(async () => {
@@ -142,8 +83,28 @@ export default function DocumentPage() {
     return () => clearTimeout(timer);
   }, [title, content]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Called by CollabEditor after seeding DB content into the editor.
+  // Keeps lastSavedRef in sync so the debounce doesn't fire a spurious save on load.
+  const handleSeedComplete = useCallback(
+    (html: string) => {
+      lastSavedRef.current = { ...lastSavedRef.current, content: html };
+    },
+    [],
+  );
+
+  const currentUserId = user?.id ?? '';
+  const handleRevoked = useCallback(() => {
+    // Owner revoked our access while we had the doc open. Remove from sidebar
+    // and bounce to home — without a re-fetch the API would now 404 on save.
+    onRevokedFromDoc(id);
+    // Notify our own other tabs (same browser) so their sidebars cleanup too.
+    if (currentUserId) {
+      broadcastDocEvent({ type: 'share-revoked', forUserId: currentUserId, docId: id });
+    }
+    navigate('/');
+  }, [id, onRevokedFromDoc, navigate, currentUserId]);
+
   async function handleDelete() {
-    if (!id) return;
     await onDelete(id);
   }
 
@@ -151,13 +112,19 @@ export default function DocumentPage() {
     return (
       <div className="doc-empty">
         <p className="muted">Document not found.</p>
-        <button className="btn-secondary" onClick={() => navigate('/')}>Go back</button>
+        <button className="btn-secondary" onClick={() => navigate('/')}>
+          Go back
+        </button>
       </div>
     );
   }
 
   if (!doc) {
-    return <div className="doc-empty"><p className="muted">Loading…</p></div>;
+    return (
+      <div className="doc-empty">
+        <p className="muted">Loading…</p>
+      </div>
+    );
   }
 
   return (
@@ -165,19 +132,73 @@ export default function DocumentPage() {
       <div className="doc-toolbar">
         <FormatToolbar editor={editor} />
         <div className="doc-toolbar-actions">
+          {presence.length > 0 && (
+            <div className="presence-dots" aria-label={`${presence.length} other user(s) editing`}>
+              {presence.slice(0, 4).map(u => (
+                <span
+                  key={u.clientId}
+                  className="presence-dot"
+                  style={{ backgroundColor: u.color }}
+                  data-tooltip={u.name}
+                  aria-label={u.name}
+                >
+                  {u.name.charAt(0).toUpperCase()}
+                </span>
+              ))}
+              {presence.length > 4 && (
+                <span className="presence-dot presence-dot--overflow">+{presence.length - 4}</span>
+              )}
+            </div>
+          )}
           <span
             className={`save-dot save-dot--${saveState}`}
-            data-tooltip={saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'Saved' : undefined}
-            aria-label={saveState === 'saving' ? 'Saving' : saveState === 'saved' ? 'Saved' : undefined}
+            data-tooltip={
+              saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'Saved' : undefined
+            }
+            aria-label={
+              saveState === 'saving' ? 'Saving' : saveState === 'saved' ? 'Saved' : undefined
+            }
           />
-          <button
-            className="btn-secondary btn-danger"
-            onClick={() => void handleDelete()}
-          >
-            Delete
-          </button>
+          {doc.permission === 'owner' && (
+            <>
+              <button
+                className="btn-secondary"
+                onClick={() => setShareOpen(true)}
+                aria-label={
+                  (doc.shareCount ?? 0) > 0
+                    ? `Share — ${doc.shareCount} ${doc.shareCount === 1 ? 'person has' : 'people have'} access`
+                    : 'Share'
+                }
+              >
+                Share
+                {(doc.shareCount ?? 0) > 0 && (
+                  <span className="share-count-badge">{doc.shareCount}</span>
+                )}
+              </button>
+              <button className="btn-secondary btn-danger" onClick={() => void handleDelete()}>
+                Delete
+              </button>
+            </>
+          )}
+          {doc.permission === 'editor' && doc.ownerEmail && (
+            <span className="muted doc-shared-by" title={`Shared by ${doc.ownerEmail}`}>
+              Shared by {doc.ownerName ?? doc.ownerEmail}
+            </span>
+          )}
         </div>
       </div>
+
+      {shareOpen && (
+        <ShareModal
+          documentId={id}
+          documentTitle={title}
+          onClose={() => setShareOpen(false)}
+          onSharesChanged={count =>
+            setDoc(prev => (prev ? { ...prev, shareCount: count } : prev))
+          }
+          onJumpToEnd={() => editor?.chain().focus('end').run()}
+        />
+      )}
 
       <div className="doc-paper">
         <input
@@ -187,7 +208,26 @@ export default function DocumentPage() {
           placeholder="Untitled"
           aria-label="Document title"
         />
-        <Editor editor={editor} />
+        <ErrorBoundary
+          fallback={
+            <div className="doc-empty">
+              <p className="muted">Editor failed to load. Please refresh the page.</p>
+            </div>
+          }
+        >
+          <CollabEditor
+            doc={doc}
+            userName={user?.name ?? user?.email ?? 'Anonymous'}
+            userId={user?.id ?? ''}
+            onContentChange={setContent}
+            onSeedComplete={handleSeedComplete}
+            onEditorReady={setEditor}
+            onSelectionUpdate={forceUpdate}
+            onPresenceChange={setPresence}
+            onRevoked={handleRevoked}
+            loadedRef={loadedRef}
+          />
+        </ErrorBoundary>
       </div>
     </div>
   );
