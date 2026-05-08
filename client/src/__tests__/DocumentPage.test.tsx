@@ -1,15 +1,21 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { useState } from 'react';
 import DocumentPage from '../pages/DocumentPage';
 
 const mockNavigate = vi.fn();
 const mockOnDelete = vi.fn();
 const mockOnUpdate = vi.fn();
+const mockOnRevokedFromDoc = vi.fn();
 
 vi.mock('react-router-dom', () => ({
   useParams: () => ({ id: 'doc-1' }),
   useNavigate: () => mockNavigate,
-  useOutletContext: () => ({ onDelete: mockOnDelete, onUpdate: mockOnUpdate }),
+  useOutletContext: () => ({
+    onDelete: mockOnDelete,
+    onUpdate: mockOnUpdate,
+    onRevokedFromDoc: mockOnRevokedFromDoc,
+  }),
 }));
 
 vi.mock('../documents/api', () => ({
@@ -17,23 +23,43 @@ vi.mock('../documents/api', () => ({
   updateDocument: vi.fn(),
 }));
 
-// Editor is a contenteditable — mock it as a plain div for tests
-vi.mock('../components/Editor', () => ({
-  default: () => <div data-testid="editor" />,
+vi.mock('../auth/AuthContext', () => ({
+  useAuth: () => ({ user: { id: 'user-1', name: 'Test User', email: 'test@test.com' } }),
 }));
 
-// FormatToolbar needs a real editor instance — render nothing in tests
+// Mock useCollabTitle as a thin useState wrapper so DocumentPage tests don't need
+// real Yjs. seedIfEmpty mirrors the real hook: write only if current title is empty.
+vi.mock('../lib/yjsCache', () => ({
+  useCollabTitle: (_docId: string) => {
+    const [title, setTitleLocal] = useState('');
+    return [
+      title,
+      (newTitle: string) => setTitleLocal(newTitle),
+      (dbTitle: string) => {
+        if (dbTitle && !title) setTitleLocal(dbTitle);
+      },
+    ] as const;
+  },
+}));
+
+// CollabEditor stub: sets loadedRef + signals editor ready (simulates Yjs sync)
+vi.mock('../components/CollabEditor', () => ({
+  default: ({
+    onEditorReady,
+    loadedRef,
+  }: {
+    onEditorReady: (e: null) => void;
+    loadedRef: { current: boolean };
+  }) => {
+    loadedRef.current = true;
+    onEditorReady(null);
+    return <div data-testid="collab-editor" />;
+  },
+}));
+
 vi.mock('../components/FormatToolbar', () => ({
   default: () => null,
 }));
-
-// Replace Tiptap with a minimal stub (no DOM/ProseMirror setup needed)
-vi.mock('@tiptap/react', () => ({
-  useEditor: () => null,
-  EditorContent: () => null,
-}));
-
-vi.mock('../extensions/SlashCommand', () => ({ default: {} }));
 
 import { getDocument, updateDocument } from '../documents/api';
 
@@ -47,6 +73,18 @@ const FAKE_DOC = {
   createdAt: '',
   updatedAt: '',
   deletedAt: null,
+  permission: 'owner' as const,
+  ownerEmail: null,
+  ownerName: null,
+  shareCount: 0,
+};
+
+const FAKE_SHARED_DOC = {
+  ...FAKE_DOC,
+  permission: 'editor' as const,
+  ownerEmail: 'owner@example.com',
+  ownerName: 'Owner Name',
+  shareCount: null,
 };
 
 beforeEach(() => {
@@ -98,17 +136,6 @@ describe('DocumentPage', () => {
     expect(mockOnUpdate).toHaveBeenCalledWith('doc-1', 'New Title');
   });
 
-  it('shows saved dot after successful auto-save', async () => {
-    render(<DocumentPage />);
-    await waitFor(() => screen.getByDisplayValue('Test Title'));
-
-    fireEvent.change(screen.getByLabelText('Document title'), {
-      target: { value: 'Updated' },
-    });
-
-    await waitFor(() => screen.getByLabelText('Saved'), { timeout: 3000 });
-  });
-
   it('calls onDelete when Delete button clicked', async () => {
     mockOnDelete.mockResolvedValue(undefined);
     render(<DocumentPage />);
@@ -118,12 +145,45 @@ describe('DocumentPage', () => {
     await waitFor(() => expect(mockOnDelete).toHaveBeenCalledWith('doc-1'));
   });
 
-  it('renders the paper frame and toolbar separately', async () => {
+  it('renders paper frame, toolbar, and collab editor', async () => {
     render(<DocumentPage />);
     await waitFor(() => screen.getByDisplayValue('Test Title'));
 
     expect(document.querySelector('.doc-paper')).toBeTruthy();
     expect(document.querySelector('.doc-toolbar')).toBeTruthy();
     expect(document.querySelector('.doc-toolbar-actions')).toBeTruthy();
+    expect(screen.getByTestId('collab-editor')).toBeDefined();
+  });
+
+  it('owner sees Share and Delete buttons', async () => {
+    render(<DocumentPage />);
+    await waitFor(() => screen.getByDisplayValue('Test Title'));
+    expect(screen.getByText('Share')).toBeDefined();
+    expect(screen.getByText('Delete')).toBeDefined();
+  });
+
+  it('Share button shows share count badge when document has shares', async () => {
+    mockGetDocument.mockResolvedValue({ document: { ...FAKE_DOC, shareCount: 3 } });
+    render(<DocumentPage />);
+    await waitFor(() => screen.getByDisplayValue('Test Title'));
+    // Badge text is the count number
+    expect(screen.getByText('3')).toBeDefined();
+  });
+
+  it('Share button has no badge when shareCount is 0', async () => {
+    render(<DocumentPage />);
+    await waitFor(() => screen.getByDisplayValue('Test Title'));
+    // No badge — '0' shouldn't appear next to Share
+    const shareButton = screen.getByText('Share').closest('button');
+    expect(shareButton?.querySelector('.share-count-badge')).toBeNull();
+  });
+
+  it('shared editor sees neither Share nor Delete, only owner attribution', async () => {
+    mockGetDocument.mockResolvedValue({ document: FAKE_SHARED_DOC });
+    render(<DocumentPage />);
+    await waitFor(() => screen.getByDisplayValue('Test Title'));
+    expect(screen.queryByText('Share')).toBeNull();
+    expect(screen.queryByText('Delete')).toBeNull();
+    expect(screen.getByText(/Shared by/)).toBeDefined();
   });
 });

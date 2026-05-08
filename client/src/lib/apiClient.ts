@@ -1,15 +1,22 @@
 const TOKEN_KEY = 'collab-notes:token';
 
+// sessionStorage (not localStorage) is intentional: it isolates the auth token
+// per browser tab. localStorage is shared across all tabs of the same origin,
+// so logging in as a different user in another tab would silently overwrite
+// the first tab's token, leading to cross-user state leaks (one tab's API calls
+// would start using the other user's token). With sessionStorage each tab has
+// its own session — opening a new tab requires a fresh login, but two users
+// can be tested side-by-side in the same browser.
 export function getToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY);
+  return sessionStorage.getItem(TOKEN_KEY);
 }
 
 export function setToken(token: string): void {
-  localStorage.setItem(TOKEN_KEY, token);
+  sessionStorage.setItem(TOKEN_KEY, token);
 }
 
 export function clearToken(): void {
-  localStorage.removeItem(TOKEN_KEY);
+  sessionStorage.removeItem(TOKEN_KEY);
 }
 
 export class ApiError extends Error {
@@ -22,7 +29,7 @@ export class ApiError extends Error {
   }
 }
 
-export async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
+export async function apiFetch<T>(path: string, options: RequestInit = {}, timeoutMs = 12000): Promise<T> {
   const token = getToken();
   const headers = new Headers(options.headers);
   if (!headers.has('Content-Type') && options.body) {
@@ -32,7 +39,21 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
     headers.set('Authorization', `Bearer ${token}`);
   }
 
-  const res = await fetch(path, { ...options, headers });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  let res: Response;
+  try {
+    res = await fetch(path, { ...options, headers, signal: controller.signal });
+  } catch (err) {
+    if ((err as Error).name === 'AbortError') {
+      throw new ApiError(0, null, 'Request timed out');
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+
   const text = await res.text();
   let body: unknown = null;
   if (text) {
