@@ -23,6 +23,7 @@ const defaultProps = {
   onCreateDocument: vi.fn(),
   onDeleteDocument: vi.fn(),
   onRestoreDocument: vi.fn(),
+  onPermanentDeleteDocument: vi.fn(),
 };
 
 beforeEach(() => {
@@ -70,6 +71,12 @@ describe('Sidebar', () => {
     render(<Sidebar {...defaultProps} trashDocs={TRASH} />);
     fireEvent.click(screen.getByLabelText('Restore document'));
     expect(defaultProps.onRestoreDocument).toHaveBeenCalledWith('doc-3');
+  });
+
+  it('calls onPermanentDeleteDocument when permanent delete button clicked', () => {
+    render(<Sidebar {...defaultProps} trashDocs={TRASH} />);
+    fireEvent.click(screen.getByLabelText('Permanently delete document'));
+    expect(defaultProps.onPermanentDeleteDocument).toHaveBeenCalledWith('doc-3');
   });
 
   it('highlights the active document', () => {

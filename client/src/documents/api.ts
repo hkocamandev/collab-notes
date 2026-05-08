@@ -44,3 +44,7 @@ export function restoreDocument(id: string) {
     method: 'PATCH',
   });
 }
+
+export function permanentlyDeleteDocument(id: string) {
+  return apiFetch<void>(`/api/documents/${id}/permanent`, { method: 'DELETE' });
+}

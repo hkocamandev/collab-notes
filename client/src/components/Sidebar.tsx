@@ -7,6 +7,7 @@ interface SidebarProps {
   onCreateDocument: () => void;
   onDeleteDocument: (id: string) => void;
   onRestoreDocument: (id: string) => void;
+  onPermanentDeleteDocument: (id: string) => void;
 }
 
 export function Sidebar({
@@ -15,6 +16,7 @@ export function Sidebar({
   onCreateDocument,
   onDeleteDocument,
   onRestoreDocument,
+  onPermanentDeleteDocument,
 }: SidebarProps) {
   const navigate = useNavigate();
   const { id: currentId } = useParams<{ id: string }>();
@@ -51,7 +53,7 @@ export function Sidebar({
                   e.stopPropagation();
                   onDeleteDocument(doc.id);
                 }}
-                title="Delete"
+                title="Move to trash"
                 aria-label="Delete document"
               >
                 ×
@@ -74,6 +76,14 @@ export function Sidebar({
                 aria-label="Restore document"
               >
                 ↩
+              </button>
+              <button
+                className="sidebar-item-action sidebar-item-action--permanent-delete"
+                onClick={() => onPermanentDeleteDocument(doc.id)}
+                title="Delete permanently"
+                aria-label="Permanently delete document"
+              >
+                🗑
               </button>
             </div>
           ))}
