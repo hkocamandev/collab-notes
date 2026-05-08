@@ -1,0 +1,24 @@
+{
+  "name": "collab-notes",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Real-time collaborative note-taking application",
+  "workspaces": [
+    "client",
+    "server"
+  ],
+  "scripts": {
+    "dev": "npm-run-all -p dev:server dev:client",
+    "dev:client": "npm run dev --workspace=client",
+    "dev:server": "npm run dev --workspace=server",
+    "build": "npm-run-all build:server build:client",
+    "build:client": "npm run build --workspace=client",
+    "build:server": "npm run build --workspace=server"
+  },
+  "devDependencies": {
+    "npm-run-all": "^4.1.5"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
