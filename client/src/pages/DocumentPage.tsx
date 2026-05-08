@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useOutletContext, useParams } from 'react-router-dom';
 import { type Document, getDocument, updateDocument } from '../documents/api.js';
 import type { WorkspaceOutletContext } from './WorkspaceLayout.js';
+import Editor from '../components/Editor.js';
 
 type SaveState = 'idle' | 'saving' | 'saved';
 
@@ -41,7 +42,6 @@ export default function DocumentPage() {
     }
   }
 
-  // Debounced auto-save — only fires when content actually changed
   useEffect(() => {
     if (!loadedRef.current || !id) return;
     if (title === lastSavedRef.current.title && content === lastSavedRef.current.content) return;
@@ -95,21 +95,16 @@ export default function DocumentPage() {
         </button>
       </div>
 
-      <input
-        className="doc-title"
-        value={title}
-        onChange={e => setTitle(e.target.value)}
-        placeholder="Untitled"
-        aria-label="Document title"
-      />
-
-      <textarea
-        className="doc-content"
-        value={content}
-        onChange={e => setContent(e.target.value)}
-        placeholder="Start writing…"
-        aria-label="Document content"
-      />
+      <div className="doc-paper">
+        <input
+          className="doc-title"
+          value={title}
+          onChange={e => setTitle(e.target.value)}
+          placeholder="Untitled"
+          aria-label="Document title"
+        />
+        <Editor content={content} onChange={setContent} />
+      </div>
     </div>
   );
 }

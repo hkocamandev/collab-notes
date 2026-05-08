@@ -17,6 +17,17 @@ vi.mock('../documents/api', () => ({
   updateDocument: vi.fn(),
 }));
 
+vi.mock('../components/Editor', () => ({
+  default: ({ content, onChange }: { content: string; onChange: (html: string) => void }) => (
+    <textarea
+      data-testid="editor"
+      value={content}
+      onChange={e => onChange(e.target.value)}
+      aria-label="Document content"
+    />
+  ),
+}));
+
 import { getDocument, updateDocument } from '../documents/api';
 
 const mockGetDocument = vi.mocked(getDocument);
@@ -99,5 +110,13 @@ describe('DocumentPage', () => {
 
     fireEvent.click(screen.getByText('Delete'));
     await waitFor(() => expect(mockOnDelete).toHaveBeenCalledWith('doc-1'));
+  });
+
+  it('renders the paper frame and toolbar separately', async () => {
+    render(<DocumentPage />);
+    await waitFor(() => screen.getByDisplayValue('Test Title'));
+
+    expect(document.querySelector('.doc-paper')).toBeTruthy();
+    expect(document.querySelector('.doc-toolbar')).toBeTruthy();
   });
 });
