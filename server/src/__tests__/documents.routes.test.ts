@@ -14,6 +14,7 @@ vi.mock('../db.js', () => ({
       findFirst: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
+      delete: vi.fn(),
     },
   },
 }));
@@ -25,6 +26,7 @@ const mockDocFindMany = db.document.findMany as ReturnType<typeof vi.fn>;
 const mockDocFindFirst = db.document.findFirst as ReturnType<typeof vi.fn>;
 const mockDocCreate = db.document.create as ReturnType<typeof vi.fn>;
 const mockDocUpdate = db.document.update as ReturnType<typeof vi.fn>;
+const mockDocDelete = db.document.delete as ReturnType<typeof vi.fn>;
 
 const app = createApp();
 
@@ -152,6 +154,31 @@ describe('DELETE /api/documents/:id', () => {
       .delete('/api/documents/doc-1')
       .set(authHeader());
     expect(res.status).toBe(404);
+  });
+});
+
+describe('DELETE /api/documents/:id/permanent', () => {
+  it('204 permanently deletes a document in trash', async () => {
+    mockDocFindFirst.mockResolvedValue({ ...FAKE_DOC, deletedAt: new Date() });
+    mockDocDelete.mockResolvedValue(undefined);
+    const res = await request(app)
+      .delete('/api/documents/doc-1/permanent')
+      .set(authHeader());
+    expect(res.status).toBe(204);
+    expect(mockDocDelete).toHaveBeenCalledWith({ where: { id: 'doc-1' } });
+  });
+
+  it('404 when document is not in trash', async () => {
+    mockDocFindFirst.mockResolvedValue(null);
+    const res = await request(app)
+      .delete('/api/documents/doc-1/permanent')
+      .set(authHeader());
+    expect(res.status).toBe(404);
+  });
+
+  it('401 without token', async () => {
+    const res = await request(app).delete('/api/documents/doc-1/permanent');
+    expect(res.status).toBe(401);
   });
 });
 

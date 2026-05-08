@@ -8,6 +8,7 @@ import {
   deleteDocument,
   listDocuments,
   listTrash,
+  permanentlyDeleteDocument,
   restoreDocument,
 } from '../documents/api.js';
 
@@ -48,6 +49,11 @@ export default function WorkspaceLayout() {
     navigate('/');
   }
 
+  async function handlePermanentDelete(id: string) {
+    await permanentlyDeleteDocument(id);
+    setTrashDocs(prev => prev.filter(d => d.id !== id));
+  }
+
   async function handleRestore(id: string) {
     const res = await restoreDocument(id);
     setTrashDocs(prev => prev.filter(d => d.id !== id));
@@ -69,6 +75,7 @@ export default function WorkspaceLayout() {
         onCreateDocument={() => void handleCreate()}
         onDeleteDocument={id => void handleDelete(id)}
         onRestoreDocument={id => void handleRestore(id)}
+        onPermanentDeleteDocument={id => void handlePermanentDelete(id)}
       />
       <div className="workspace-content">
         <header className="workspace-header">

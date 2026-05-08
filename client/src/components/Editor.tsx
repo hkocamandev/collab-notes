@@ -1,4 +1,5 @@
 import { useEditor, EditorContent } from '@tiptap/react';
+import type { Editor as TiptapEditor } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
 import Underline from '@tiptap/extension-underline';
@@ -10,6 +11,7 @@ import CharacterCount from '@tiptap/extension-character-count';
 import Typography from '@tiptap/extension-typography';
 import { createLowlight, common } from 'lowlight';
 import SlashCommand from '../extensions/SlashCommand.js';
+import FormatToolbar from './FormatToolbar.js';
 
 const lowlight = createLowlight(common);
 
@@ -28,7 +30,7 @@ export default function Editor({ content, onChange }: Props) {
       Underline,
       TaskList,
       TaskItem.configure({ nested: true }),
-      CodeBlockLowlight.configure({ lowlight }),
+      CodeBlockLowlight.configure({ lowlight, defaultLanguage: 'javascript' }),
       Link.configure({ openOnClick: false, HTMLAttributes: { rel: 'noopener noreferrer' } }),
       CharacterCount,
       Typography,
@@ -45,6 +47,7 @@ export default function Editor({ content, onChange }: Props) {
 
   return (
     <div className="editor-wrapper">
+      <FormatToolbar editor={editor as TiptapEditor | null} />
       <EditorContent editor={editor} className="editor-content" />
       <div className="editor-footer">
         <span className="editor-count">{words} words · {chars} chars</span>

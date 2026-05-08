@@ -331,6 +331,12 @@ a:hover {
   color: var(--primary);
 }
 
+.sidebar-item-action--permanent-delete:hover {
+  background: var(--error-bg);
+  color: var(--error);
+  border-color: #fecaca;
+}
+
 .sidebar-trash {
   border-top: 1px solid var(--border);
   padding: 0.5rem;
@@ -485,6 +491,54 @@ a:hover {
   align-items: center;
   gap: 0.75rem;
   flex-wrap: wrap;
+}
+
+/* ----- Format toolbar ----- */
+
+.format-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+  padding-bottom: 0.75rem;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.format-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  cursor: pointer;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--muted);
+  transition: background 0.1s, color 0.1s, border-color 0.1s;
+}
+.format-btn:hover {
+  background: var(--bg);
+  color: var(--text);
+  border-color: var(--border);
+}
+.format-btn.active {
+  background: var(--primary-soft);
+  color: var(--primary);
+  border-color: var(--primary);
+}
+
+.format-sep {
+  display: inline-block;
+  width: 1px;
+  height: 1.25rem;
+  background: var(--border);
+  margin: 0 0.25rem;
+  flex-shrink: 0;
 }
 
 /* ----- Tiptap editor ----- */

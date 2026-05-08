@@ -112,6 +112,20 @@ router.delete('/:id', async (req: Request, res: Response) => {
   res.status(204).send();
 });
 
+// Kalıcı silme (sadece çöp kutusundakiler)
+router.delete('/:id/permanent', async (req: Request, res: Response) => {
+  const existing = await db.document.findFirst({
+    where: { id: req.params.id, userId: req.user!.id, deletedAt: { not: null } },
+  });
+  if (!existing) {
+    res.status(404).json({ error: 'Document not found in trash' });
+    return;
+  }
+
+  await db.document.delete({ where: { id: req.params.id } });
+  res.status(204).send();
+});
+
 // Geri al (restore)
 router.patch('/:id/restore', async (req: Request, res: Response) => {
   const existing = await db.document.findFirst({
