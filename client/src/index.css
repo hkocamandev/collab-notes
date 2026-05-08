@@ -266,6 +266,66 @@ a:hover {
   text-align: center;
 }
 
+/* ── Toast notifications ─────────────────────────── */
+.toast-list {
+  position: fixed;
+  right: 1.25rem;
+  bottom: 1.25rem;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  max-width: 360px;
+  pointer-events: none; /* let clicks fall through gaps; toasts re-enable */
+}
+
+.toast {
+  pointer-events: auto;
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--primary);
+  border-radius: 8px;
+  box-shadow: 0 10px 30px rgba(28, 25, 23, 0.18);
+  animation: toast-life 10s ease-out forwards;
+}
+
+/* Slide+fade in over the first 5%, hold solid, fade out the last ~5%. */
+@keyframes toast-life {
+  0%   { opacity: 0; transform: translateY(16px); }
+  5%   { opacity: 1; transform: translateY(0); }
+  90%  { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(0); }
+}
+
+.toast-content { flex: 1; min-width: 0; }
+.toast-title {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text);
+}
+.toast-body {
+  margin: 2px 0 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+  word-wrap: break-word;
+}
+
+.toast-close {
+  background: none;
+  border: none;
+  font-size: 1.1rem;
+  line-height: 1;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 2px 6px;
+  align-self: flex-start;
+}
+.toast-close:hover { color: var(--text); }
+
 /* ── Plan badge + upgrade ────────────────────────── */
 .plan-badge {
   display: inline-flex;

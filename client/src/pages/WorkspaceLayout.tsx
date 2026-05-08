@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext.js';
 import { Sidebar } from '../components/Sidebar.js';
+import ToastList, { type ToastItem } from '../components/Toast.js';
 import {
   type Document,
   createDocument,
@@ -12,6 +13,8 @@ import {
   restoreDocument,
 } from '../documents/api.js';
 import { broadcastDocEvent, useDocEvents } from '../lib/docEvents.js';
+
+const TOAST_DURATION_MS = 10_000;
 
 export interface WorkspaceOutletContext {
   onDelete: (id: string) => Promise<void>;
@@ -38,6 +41,22 @@ export default function WorkspaceLayout() {
   const [sharedDocs, setSharedDocs] = useState<Document[]>([]);
   const [trashDocs, setTrashDocs] = useState<Document[]>([]);
   const [loadError, setLoadError] = useState(false);
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
+
+  function pushToast(title: string, body?: string) {
+    // crypto.randomUUID is browser-native; safe under HTTPS / localhost.
+    const id = crypto.randomUUID();
+    setToasts(prev => [...prev, { id, title, body }]);
+    // Match the CSS animation duration so the React unmount lines up with
+    // the fade-out finishing.
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, TOAST_DURATION_MS);
+  }
+
+  function dismissToast(id: string) {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  }
 
   useEffect(() => {
     void loadAll();
@@ -76,6 +95,13 @@ export default function WorkspaceLayout() {
         // A doc was just shared with us — refetch from server so the new entry
         // appears with full owner info, permission, etc.
         void loadAll();
+        if (event.senderEmail) {
+          const who = event.senderName ?? event.senderEmail;
+          pushToast(
+            `${who} shared a document with you`,
+            event.docTitle ? `"${event.docTitle}"` : undefined,
+          );
+        }
         break;
       case 'share-revoked':
         // Sister tab told us we were revoked from a doc; mirror the cleanup.
@@ -184,6 +210,7 @@ export default function WorkspaceLayout() {
 
   return (
     <div className="workspace">
+      <ToastList toasts={toasts} onDismiss={dismissToast} />
       <Sidebar
         documents={documents}
         sharedDocs={sharedDocs}

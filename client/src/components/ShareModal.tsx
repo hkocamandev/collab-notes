@@ -3,6 +3,7 @@ import { type Share, listShares, shareDocument, revokeShare } from '../documents
 import { ApiError } from '../lib/apiClient.js';
 import { signalRevoke } from '../lib/yjsCache.js';
 import { broadcastDocEvent } from '../lib/docEvents.js';
+import { useAuth } from '../auth/AuthContext.js';
 
 interface ShareModalProps {
   documentId: string;
@@ -23,6 +24,7 @@ export default function ShareModal({
   onSharesChanged,
   onJumpToEnd,
 }: ShareModalProps) {
+  const { user } = useAuth();
   const [shares, setShares] = useState<Share[]>([]);
   const [email, setEmail] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -57,9 +59,15 @@ export default function ShareModal({
       const res = await shareDocument(documentId, email.trim());
       setEmail('');
       // Notify the recipient's open tabs (same browser) so their sidebar refetches
-      // immediately. Cross-browser users still need a refresh — that path would
-      // need a server-side push, which we don't have yet.
-      broadcastDocEvent({ type: 'share-added', forUserId: res.share.userId });
+      // immediately and a toast pops up. Cross-browser users still need a refresh
+      // — that path would need a server-side push, which we don't have yet.
+      broadcastDocEvent({
+        type: 'share-added',
+        forUserId: res.share.userId,
+        senderName: user?.name ?? null,
+        senderEmail: user?.email,
+        docTitle: documentTitle,
+      });
       // Re-fetch from server instead of optimistic append, so the list always
       // reflects what's actually persisted. load() also fires onSharesChanged.
       await load();

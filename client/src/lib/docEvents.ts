@@ -16,9 +16,17 @@ export type DocEvent =
   | { type: 'soft-deleted'; forUserId: string; doc: Document }
   | { type: 'restored'; forUserId: string; doc: Document }
   | { type: 'permanent-deleted'; forUserId: string; docId: string }
-  // share-added: recipient's tabs refetch their sidebar to pick up the new entry.
-  // Sender is the owner; forUserId is the recipient.
-  | { type: 'share-added'; forUserId: string }
+  // share-added: recipient's tabs refetch their sidebar to pick up the new
+  // entry and surface a toast notification. Sender is the owner; forUserId is
+  // the recipient. The optional sender/doc fields drive the toast copy — if
+  // they're missing the recipient still refetches but skips the toast.
+  | {
+      type: 'share-added';
+      forUserId: string;
+      senderName?: string | null;
+      senderEmail?: string;
+      docTitle?: string;
+    }
   // share-revoked: emitted by the recipient's open doc tab (after detecting the
   // revoke via Yjs awareness) so their other tabs (e.g. home) update the sidebar.
   | { type: 'share-revoked'; forUserId: string; docId: string }
