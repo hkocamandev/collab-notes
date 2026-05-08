@@ -1,3 +1,14 @@
+// Auth context: bootstraps from sessionStorage on mount, fetches /me to
+// validate the token, and exposes login / register / logout / upgrade
+// helpers via useAuth. status drives ProtectedRoute and per-page UI.
+//
+// Two integration points worth noting:
+//   - logout() awaits a best-effort POST /api/documents/snapshot-mine so a
+//     version is saved before the token is cleared. Failure is swallowed
+//     so a flaky network never traps the user in the app.
+//   - Token storage is sessionStorage (not localStorage) — see
+//     lib/apiClient for the rationale.
+
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import * as authApi from './api';
 import type { User } from './api';

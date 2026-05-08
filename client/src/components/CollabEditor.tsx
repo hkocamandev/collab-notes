@@ -1,3 +1,20 @@
+// CollabEditor — Tiptap editor wired up to a Yjs doc + WebsocketProvider.
+//
+// The Yjs lifecycle is handled by lib/yjsCache (module-level cache with
+// refcounted, deferred destroy) so React's StrictMode double-mount in dev
+// doesn't tear down a live WS connection between mounts.
+//
+// Three jobs beyond editing:
+//   - Seed first content: on initial provider sync (or after a 2 s
+//     fallback) we copy the DB content into the Yjs fragment if it's
+//     still empty, so an offline reload of a fresh tab recovers the
+//     user's last save.
+//   - Presence: writes our user info to awareness, listens for change
+//     events and projects everyone else's user payload to the parent.
+//   - Revoke detection: scans peer awareness for a revokedUserIds list
+//     containing our userId; if found, calls onRevoked() so the parent
+//     can navigate away.
+
 import { useEffect } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import { Extension } from '@tiptap/core';

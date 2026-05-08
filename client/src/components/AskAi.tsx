@@ -1,3 +1,10 @@
+// Sidebar-bottom Ask AI panel.
+//
+// Posts the query to /api/ai/ask and renders the ranked title list. The
+// embedding work happens on the server (transformers.js + the bundled
+// all-MiniLM-L6-v2 model); the browser does no heavy lifting. Click a
+// result to navigate to that document.
+
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { type AskResult, askAi } from '../ai/api.js';

@@ -1,3 +1,10 @@
+// Read-only version history dialog. Anyone with read access (owner or
+// shared editor) can open it. Each row shows the editor's name + a
+// relative+absolute timestamp; clicking "Restore" is intentionally
+// disabled — that work is queued as a future improvement (the snapshot
+// payload already includes full title+content, so a future restore is
+// just one new endpoint).
+
 import { useEffect, useState } from 'react';
 import { type Version, listVersions } from '../documents/api.js';
 

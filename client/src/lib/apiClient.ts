@@ -1,3 +1,13 @@
+// HTTP client for talking to the Express API.
+//
+// apiFetch wraps fetch() with three concerns the rest of the app keeps
+// asking for: bearer-auth header injection, JSON envelope handling, and
+// a hard 12-second AbortController timeout (a stalled API would otherwise
+// keep ProtectedRoute on "Loading…" indefinitely). Errors come back as
+// the typed ApiError below so callers can branch on status / body.kind.
+//
+// Token storage uses sessionStorage on purpose — see getToken().
+
 const TOKEN_KEY = 'collab-notes:token';
 
 // sessionStorage (not localStorage) is intentional: it isolates the auth token

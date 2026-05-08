@@ -1,3 +1,16 @@
+// Owner-only share management dialog.
+//
+// On mount it fetches the current shares and re-fetches after every
+// add/revoke so the list always reflects the server (no stale optimistic
+// state). Three side effects worth flagging when a share is added or
+// revoked:
+//   - signalRevoke: writes a revokedUserIds field to Yjs awareness so any
+//     active editor session for the revoked user is kicked out instantly.
+//   - broadcastDocEvent (share-added): tells the recipient's same-browser
+//     tabs to refetch their sidebar AND drives a toast notification.
+//   - onSharesChanged: lets the parent (DocumentPage) update the
+//     share-count badge without re-querying the server.
+
 import { useEffect, useState } from 'react';
 import { type Share, listShares, shareDocument, revokeShare } from '../documents/api.js';
 import { ApiError } from '../lib/apiClient.js';
