@@ -9,6 +9,7 @@
     "dev:yws": "YWS_START=1 tsx watch src/yws.ts",
     "build": "tsc",
     "start": "node dist/index.js",
+    "start:prod": "prisma migrate deploy && node dist/index.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",

@@ -2,7 +2,16 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 
-const WS_URL = import.meta.env.VITE_YWS_URL ?? 'ws://localhost:4001';
+// Resolution order:
+//   1. VITE_YWS_URL — explicit override (e.g. CI, custom deploys).
+//   2. In a browser over HTTPS (production deploy): wss://<host>/yws — same
+//      origin as the SPA, so a single Render service serves API + WS + static.
+//   3. Local dev fallback: separate ws server on :4001 from docker-compose.
+const WS_URL =
+  import.meta.env.VITE_YWS_URL ??
+  (typeof window !== 'undefined' && window.location.protocol === 'https:'
+    ? `wss://${window.location.host}/yws`
+    : 'ws://localhost:4001');
 
 // Module-level cache: keyed by docId so React StrictMode's mount→unmount→remount
 // cycle (dev only) reuses the same Yjs doc instead of creating a fresh one each time.
