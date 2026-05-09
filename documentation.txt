@@ -83,7 +83,7 @@ TABLE OF CONTENTS
 
 A. Authentication
    Branch: dev/1-skeleton
-   - JWT tokens, 7-day expiry, HS256
+   - JWT tokens, 1-hour expiry, HS256
    - bcryptjs password hashing (10 rounds)
    - Email + password register/login, optional display name
    - sessionStorage-based token storage on the client (per-tab isolation
@@ -179,6 +179,7 @@ J. Toast notifications
      setTimeout + CSS animation (slide-in 5%, hold 90%, fade-out 5%)
    - aria-live="polite" region; manual × dismiss button
    - Same-browser only via BC (cross-browser realtime is future work)
+    - future-work: email sending infrastructure
 
 K. Local AI document search
    Branch: dev/10-mcp-ai
