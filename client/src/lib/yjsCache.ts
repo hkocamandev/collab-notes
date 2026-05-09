@@ -148,10 +148,10 @@ export function useCollabTitle(docId: string) {
         return;
       }
       const onSynced = () => {
-        provider.off('synced', onSynced);
+        provider.off('sync', onSynced);
         seed();
       };
-      provider.on('synced', onSynced);
+      provider.on('sync', onSynced);
       // Offline fallback: if the WebSocket never connects (server down or
       // network blocked), seed locally after a short delay so the title
       // doesn't stay blank forever. The `done` flag prevents a double seed
