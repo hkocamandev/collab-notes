@@ -97,9 +97,16 @@ export function useYjsCache(docId: string): YjsEntry {
 // Returns [title, setTitle, seedIfEmpty]:
 //   - title: current value, updates on remote changes
 //   - setTitle: write to Y.Text (will broadcast to other tabs)
-//   - seedIfEmpty: call once after DB load — only writes if Y.Text is still empty
+//   - seedIfEmpty: call once after DB load — defers the write until the
+//     WebSocket provider has synced, then writes only if Y.Text is empty.
+//     Why: seeding before sync collides with prior server state. The
+//     server's in-memory room keeps Y.Text populated even after the last
+//     client disconnects, so re-visiting a document creates a fresh local
+//     Y.Doc whose Y.Text is empty until sync delivers the existing state.
+//     Inserting "test" locally and then merging the server's "test" leaves
+//     "testtest" because both are independent CRDT insertions at position 0.
 export function useCollabTitle(docId: string) {
-  const { ydoc } = useYjsCache(docId);
+  const { ydoc, provider } = useYjsCache(docId);
   const ytext = useMemo(() => ydoc.getText('title'), [ydoc]);
 
   const [title, setTitleLocal] = useState(() => ytext.toString());
@@ -126,12 +133,32 @@ export function useCollabTitle(docId: string) {
 
   const seedIfEmpty = useCallback(
     (dbTitle: string) => {
-      if (ytext.toString() !== '' || !dbTitle) return;
-      ydoc.transact(() => {
-        ytext.insert(0, dbTitle);
-      });
+      if (!dbTitle) return;
+      let done = false;
+      const seed = () => {
+        if (done) return;
+        done = true;
+        if (ytext.toString() !== '') return;
+        ydoc.transact(() => {
+          ytext.insert(0, dbTitle);
+        });
+      };
+      if (provider.synced) {
+        seed();
+        return;
+      }
+      const onSynced = () => {
+        provider.off('synced', onSynced);
+        seed();
+      };
+      provider.on('synced', onSynced);
+      // Offline fallback: if the WebSocket never connects (server down or
+      // network blocked), seed locally after a short delay so the title
+      // doesn't stay blank forever. The `done` flag prevents a double seed
+      // if 'synced' fires after the timeout.
+      setTimeout(seed, 3000);
     },
-    [ydoc, ytext],
+    [ydoc, ytext, provider],
   );
 
   return [title, setTitle, seedIfEmpty] as const;
