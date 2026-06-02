@@ -2,7 +2,7 @@ import http from 'node:http';
 import { WebSocketServer } from 'ws';
 import { env } from './env.js';
 import { createApp } from './app.js';
-import { setupWSConnection } from './yws.js';
+import { setupWSConnection, authorizeConnection } from './yws.js';
 
 const app = createApp();
 const server = http.createServer(app);
@@ -21,9 +21,21 @@ server.on('upgrade', (req, socket, head) => {
     return;
   }
   req.url = url.slice('/yws'.length) || '/';
-  wss.handleUpgrade(req, socket, head, ws => {
-    wss.emit('connection', ws, req);
-  });
+  // Authorize (valid JWT + access to this document) before joining a room.
+  // The token rides in the `?token=` query param since browser WebSocket
+  // handshakes can't set an Authorization header.
+  authorizeConnection(req)
+    .then(userId => {
+      if (!userId) {
+        socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+        socket.destroy();
+        return;
+      }
+      wss.handleUpgrade(req, socket, head, ws => {
+        wss.emit('connection', ws, req);
+      });
+    })
+    .catch(() => socket.destroy());
 });
 
 wss.on('connection', setupWSConnection);

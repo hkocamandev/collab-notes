@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
+import { getToken } from './apiClient';
 
 // Resolution order:
 //   1. VITE_YWS_URL — explicit override (e.g. CI, custom deploys).
@@ -37,7 +38,14 @@ export function acquireYjs(docId: string): YjsEntry {
     return existing;
   }
   const ydoc = new Y.Doc();
-  const provider = new WebsocketProvider(WS_URL, `doc-${docId}`, ydoc);
+  // Send the JWT so the server can authorize the WebSocket. Browser WS
+  // handshakes can't carry an Authorization header, so y-websocket appends
+  // these as a `?token=` query param. Without a valid token for a document
+  // the user can access, the server rejects the upgrade (see server/src/yws.ts).
+  const token = getToken();
+  const provider = new WebsocketProvider(WS_URL, `doc-${docId}`, ydoc, {
+    params: token ? { token } : {},
+  });
   const entry: YjsEntry = { ydoc, provider, refs: 1, destroyTimer: null };
   yjsCache.set(docId, entry);
   return entry;

@@ -51,7 +51,16 @@ vi.mock('http', () => ({
   createServer: vi.fn(() => ({ listen: vi.fn((_, cb?: () => void) => cb?.()) })),
 }));
 
-import { setupWSConnection, rooms } from '../yws.js';
+// db is hit only by authorizeConnection; mock it so no real Prisma client loads.
+vi.mock('../db.js', () => ({
+  db: { document: { findFirst: vi.fn() } },
+}));
+
+import { setupWSConnection, authorizeConnection, rooms } from '../yws.js';
+import { signToken } from '../auth/jwt.js';
+import { db } from '../db.js';
+
+const findFirst = db.document.findFirst as unknown as ReturnType<typeof vi.fn>;
 
 function makeConn() {
   return {
@@ -122,5 +131,47 @@ describe('setupWSConnection', () => {
     closeHandler!();
 
     expect(rooms.get('close-test')!.conns.has(conn as never)).toBe(false);
+  });
+});
+
+describe('authorizeConnection', () => {
+  const reqFor = (url: string) => ({ url, headers: { host: 'localhost' } }) as never;
+
+  it('returns null when no token query param is present', async () => {
+    expect(await authorizeConnection(reqFor('/doc-abc'))).toBeNull();
+    expect(findFirst).not.toHaveBeenCalled();
+  });
+
+  it('returns null for an invalid/garbage token', async () => {
+    expect(await authorizeConnection(reqFor('/doc-abc?token=not.a.jwt'))).toBeNull();
+    expect(findFirst).not.toHaveBeenCalled();
+  });
+
+  it('returns null when the room name is not a doc- room', async () => {
+    const token = signToken('user-1');
+    expect(await authorizeConnection(reqFor(`/random?token=${token}`))).toBeNull();
+    expect(findFirst).not.toHaveBeenCalled();
+  });
+
+  it('returns the userId when the token is valid and the user can access the doc', async () => {
+    findFirst.mockResolvedValueOnce({ id: 'abc' });
+    const token = signToken('user-1');
+    expect(await authorizeConnection(reqFor(`/doc-abc?token=${token}`))).toBe('user-1');
+    expect(findFirst).toHaveBeenCalledWith({
+      where: { id: 'abc', OR: [{ userId: 'user-1' }, { shares: { some: { userId: 'user-1' } } }] },
+      select: { id: true },
+    });
+  });
+
+  it('returns null when the user has no access to the doc', async () => {
+    findFirst.mockResolvedValueOnce(null);
+    const token = signToken('user-2');
+    expect(await authorizeConnection(reqFor(`/doc-abc?token=${token}`))).toBeNull();
+  });
+
+  it('returns null when the DB query throws', async () => {
+    findFirst.mockRejectedValueOnce(new Error('db down'));
+    const token = signToken('user-1');
+    expect(await authorizeConnection(reqFor(`/doc-abc?token=${token}`))).toBeNull();
   });
 });
