@@ -21,6 +21,8 @@ import * as syncProtocol from 'y-protocols/sync';
 import * as awarenessProtocol from 'y-protocols/awareness';
 import * as encoding from 'lib0/encoding';
 import * as decoding from 'lib0/decoding';
+import { verifyToken } from './auth/jwt.js';
+import { db } from './db.js';
 
 const MESSAGE_SYNC = 0;
 const MESSAGE_AWARENESS = 1;
@@ -140,14 +142,71 @@ function setupWSConnection(conn: WebSocket, req: IncomingMessage) {
   conn.on('error', () => closeConn(room, conn));
 }
 
-export { setupWSConnection, rooms };
+// Authorize a WebSocket upgrade before any room is joined.
+//
+// Why this exists: without it, anyone who knows (or guesses) a document id
+// could open `ws://host/doc-<id>` and read or mutate that document's live
+// CRDT stream — the REST API is behind requireAuth, but the realtime channel
+// used to be wide open. A browser WebSocket handshake can't send an
+// Authorization header, so the client passes its JWT as a `?token=` query
+// param instead (see client/src/lib/yjsCache.ts).
+//
+// Returns the authenticated userId when the token is valid AND that user
+// owns the document or it has been shared with them; otherwise null. Shared
+// by both entry points: the unified single-port server (server/src/index.ts)
+// and the standalone process below used by docker-compose.
+async function authorizeConnection(req: IncomingMessage): Promise<string | null> {
+  try {
+    const url = new URL(req.url ?? '/', 'http://localhost');
+    const token = url.searchParams.get('token');
+    if (!token) return null;
+
+    const { sub: userId } = verifyToken(token);
+
+    // Rooms are keyed `doc-<documentId>` (see acquireYjs on the client).
+    const roomName = decodeURIComponent(url.pathname.slice(1));
+    if (!roomName.startsWith('doc-')) return null;
+    const documentId = roomName.slice('doc-'.length);
+    if (!documentId) return null;
+
+    // Same access rule as the REST layer: owner OR a share recipient.
+    const doc = await db.document.findFirst({
+      where: {
+        id: documentId,
+        OR: [{ userId }, { shares: { some: { userId } } }],
+      },
+      select: { id: true },
+    });
+    return doc ? userId : null;
+  } catch {
+    // Invalid/expired token, malformed url, or DB error — deny.
+    return null;
+  }
+}
+
+export { setupWSConnection, authorizeConnection, rooms };
 
 // Only start the server when run directly (not when imported by tests)
 if (process.env.YWS_START === '1') {
   const port = parseInt(process.env.YWS_PORT ?? '4001');
   const server = createServer();
-  const wss = new WebSocketServer({ server });
-  wss.on('connection', setupWSConnection);
+  // noServer mode: we own the upgrade handshake so we can authorize before
+  // letting the connection into a room.
+  const wss = new WebSocketServer({ noServer: true });
+
+  server.on('upgrade', (req, socket, head) => {
+    authorizeConnection(req)
+      .then(userId => {
+        if (!userId) {
+          // Reject cleanly so the client gets a 401 instead of a hung socket.
+          socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+          socket.destroy();
+          return;
+        }
+        wss.handleUpgrade(req, socket, head, ws => setupWSConnection(ws, req));
+      })
+      .catch(() => socket.destroy());
+  });
 
   server.listen(port, () => {
     console.log(`[yws] Yjs WebSocket server running on ws://localhost:${port}`);

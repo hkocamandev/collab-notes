@@ -1,8 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
+import { getToken } from './apiClient';
 
-const WS_URL = import.meta.env.VITE_YWS_URL ?? 'ws://localhost:4001';
+// Resolution order:
+//   1. VITE_YWS_URL — explicit override (e.g. CI, custom deploys).
+//   2. In a browser over HTTPS (production deploy): wss://<host>/yws — same
+//      origin as the SPA, so a single Render service serves API + WS + static.
+//   3. Local dev fallback: separate ws server on :4001 from docker-compose.
+const WS_URL =
+  import.meta.env.VITE_YWS_URL ??
+  (typeof window !== 'undefined' && window.location.protocol === 'https:'
+    ? `wss://${window.location.host}/yws`
+    : 'ws://localhost:4001');
 
 // Module-level cache: keyed by docId so React StrictMode's mount→unmount→remount
 // cycle (dev only) reuses the same Yjs doc instead of creating a fresh one each time.
@@ -28,7 +38,14 @@ export function acquireYjs(docId: string): YjsEntry {
     return existing;
   }
   const ydoc = new Y.Doc();
-  const provider = new WebsocketProvider(WS_URL, `doc-${docId}`, ydoc);
+  // Send the JWT so the server can authorize the WebSocket. Browser WS
+  // handshakes can't carry an Authorization header, so y-websocket appends
+  // these as a `?token=` query param. Without a valid token for a document
+  // the user can access, the server rejects the upgrade (see server/src/yws.ts).
+  const token = getToken();
+  const provider = new WebsocketProvider(WS_URL, `doc-${docId}`, ydoc, {
+    params: token ? { token } : {},
+  });
   const entry: YjsEntry = { ydoc, provider, refs: 1, destroyTimer: null };
   yjsCache.set(docId, entry);
   return entry;
@@ -88,9 +105,16 @@ export function useYjsCache(docId: string): YjsEntry {
 // Returns [title, setTitle, seedIfEmpty]:
 //   - title: current value, updates on remote changes
 //   - setTitle: write to Y.Text (will broadcast to other tabs)
-//   - seedIfEmpty: call once after DB load — only writes if Y.Text is still empty
+//   - seedIfEmpty: call once after DB load — defers the write until the
+//     WebSocket provider has synced, then writes only if Y.Text is empty.
+//     Why: seeding before sync collides with prior server state. The
+//     server's in-memory room keeps Y.Text populated even after the last
+//     client disconnects, so re-visiting a document creates a fresh local
+//     Y.Doc whose Y.Text is empty until sync delivers the existing state.
+//     Inserting "test" locally and then merging the server's "test" leaves
+//     "testtest" because both are independent CRDT insertions at position 0.
 export function useCollabTitle(docId: string) {
-  const { ydoc } = useYjsCache(docId);
+  const { ydoc, provider } = useYjsCache(docId);
   const ytext = useMemo(() => ydoc.getText('title'), [ydoc]);
 
   const [title, setTitleLocal] = useState(() => ytext.toString());
@@ -117,12 +141,32 @@ export function useCollabTitle(docId: string) {
 
   const seedIfEmpty = useCallback(
     (dbTitle: string) => {
-      if (ytext.toString() !== '' || !dbTitle) return;
-      ydoc.transact(() => {
-        ytext.insert(0, dbTitle);
-      });
+      if (!dbTitle) return;
+      let done = false;
+      const seed = () => {
+        if (done) return;
+        done = true;
+        if (ytext.toString() !== '') return;
+        ydoc.transact(() => {
+          ytext.insert(0, dbTitle);
+        });
+      };
+      if (provider.synced) {
+        seed();
+        return;
+      }
+      const onSynced = () => {
+        provider.off('sync', onSynced);
+        seed();
+      };
+      provider.on('sync', onSynced);
+      // Offline fallback: if the WebSocket never connects (server down or
+      // network blocked), seed locally after a short delay so the title
+      // doesn't stay blank forever. The `done` flag prevents a double seed
+      // if 'synced' fires after the timeout.
+      setTimeout(seed, 3000);
     },
-    [ydoc, ytext],
+    [ydoc, ytext, provider],
   );
 
   return [title, setTitle, seedIfEmpty] as const;
