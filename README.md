@@ -1,23 +1,91 @@
 # Collab Notes
 
-Real-time collaborative note-taking application — a Notion-inspired editor
-built with React on the client and Node.js on the server.
+> A real-time, Notion-inspired collaborative note-taking app — block editor,
+> live multi-user presence, conflict-free CRDT sync, version history, sharing,
+> and fully-local AI document search.
 
-## Stack
+![React](https://img.shields.io/badge/React-18-149ECA?logo=react&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)
+![Express](https://img.shields.io/badge/Express-API-000000?logo=express&logoColor=white)
+![Yjs](https://img.shields.io/badge/Yjs-CRDT-7B68EE)
+![Prisma](https://img.shields.io/badge/Prisma-SQLite-2D3748?logo=prisma&logoColor=white)
+![Tests](https://img.shields.io/badge/tests-312%20passing-3FB950)
 
-- **Client**: React 18, Vite, TypeScript, React Router, Tiptap (block editor),
-  Yjs + y-websocket
-- **Server**: Express, TypeScript, Prisma + SQLite, JWT auth, custom Yjs
-  WebSocket server, transformers.js (local embeddings),
-  `@modelcontextprotocol/sdk`
-- **Workspace**: npm workspaces monorepo (`client/` + `server/`)
-- **Containers**: Docker + docker-compose (api / yws / nginx-served client)
+## Demo
+
+**Real-time collaboration** — two people editing the same document live, with
+presence indicators. No refresh, no save button, no merge conflicts (CRDTs).
+
+![Real-time collaboration demo](docs/screenshots/realtime-collab.gif)
+
+**Slash-command block editor** — type `/` to insert headings, lists, task
+lists, code blocks, quotes and more, Notion-style.
+
+![Slash command editor demo](docs/screenshots/slash-commands.gif)
+
+## What is Collab Notes
+
+Collab Notes is a full-stack collaborative editor. Each document is a live
+CRDT shared between everyone with access: edits merge automatically, presence
+shows who else is in the room, and the whole thing keeps working offline and
+across tabs. A local embedding model powers semantic search over your notes
+without sending anything to a third-party API.
+
+Key features:
+
+- **Real-time collaboration** — Yjs + a custom y-websocket server keep every
+  open copy of a document in sync, conflict-free, character by character.
+- **Live presence** — colored avatars show who else is editing; revoking a
+  collaborator kicks them out of the document instantly.
+- **Block editor** — Tiptap with a `/` slash menu (headings, bullet / numbered
+  / task lists, code blocks with syntax highlighting, blockquotes, dividers)
+  and a formatting toolbar.
+- **Sharing** — invite an editor by email, see who has access, and revoke it.
+- **Version history** — snapshots are captured on logout and browsable
+  read-only per document.
+- **Trash & restore** — soft delete with a trash section, restore, or delete
+  permanently.
+- **Ask AI (local, no external API)** — semantic search over your documents
+  using `transformers.js` + the bundled `all-MiniLM-L6-v2` model. The same
+  search is also exposed over the **Model Context Protocol (MCP)** so an
+  external client (e.g. Claude Desktop) can query your notes.
+- **Plans & limits** — Basic and Premium tiers with document and sharing caps
+  enforced on both the client and the server.
+- **Secure by default** — JWT auth (bcrypt password hashing) and **authorized
+  WebSocket connections** (a valid token + document access is required before
+  joining a CRDT room).
+- **Auto-save & cross-tab sync** — debounced persistence plus a
+  `BroadcastChannel` that keeps every tab's sidebar consistent.
+
+## Screenshots
+
+| | |
+| --- | --- |
+| **Sign in** — JWT auth | **Workspace** — sidebar, editor, plan badge |
+| ![Login](docs/screenshots/01-login.png) | ![Workspace](docs/screenshots/02-workspace.png) |
+| **Slash menu** — block insertion | **Real-time presence** — a second editor joins |
+| ![Slash menu](docs/screenshots/03-slash-menu.png) | ![Presence](docs/screenshots/04-realtime.png) |
+| **Sharing** — invite editors by email | **Version history** — read-only snapshots |
+| ![Share](docs/screenshots/05-share.png) | ![Versions](docs/screenshots/06-versions.png) |
+| **Ask AI** — semantic search over your notes | |
+| ![Ask AI](docs/screenshots/07-ask-ai.png) | |
+
+## Tech stack
+
+| Area | Technologies |
+| ---- | ------------ |
+| **Frontend** | React 18, Vite, TypeScript, React Router, Tiptap (block editor) |
+| **Real-time** | Yjs (CRDT), y-websocket, a custom WebSocket sync server, Awareness presence, `BroadcastChannel` |
+| **Backend** | Node.js 20, Express, TypeScript (strict), Zod validation |
+| **Database** | SQLite via Prisma (swappable for Postgres with one line) |
+| **Auth & security** | JWT (`jsonwebtoken`), bcrypt, authorized WebSocket upgrades |
+| **AI** | `transformers.js` + `all-MiniLM-L6-v2` embeddings (runs locally), `@modelcontextprotocol/sdk` |
+| **Tooling** | npm workspaces monorepo, Vitest + Supertest + Testing Library |
+| **Containers** | Docker + docker-compose (api / yws / nginx-served client) |
 
 In development the client proxies `/api/*` to the server, so API calls come
 from the same origin in the browser. The Yjs WebSocket server listens on its
 own port.
-
-## Project layout
 
 ```
 collab-notes/
@@ -25,13 +93,9 @@ collab-notes/
 └── server/   # Express API (port 4000) + Yjs WS server (port 4001)
 ```
 
-## Requirements
-
-- Node.js 20+
-- npm 10+
-- Docker (optional, for the containerised stack)
-
 ## Getting started
+
+**Requirements:** Node.js 20+, npm 10+ (Docker optional).
 
 Install dependencies once at the repo root:
 
@@ -66,7 +130,7 @@ npm run build
 ### Tests
 
 ```bash
-npm run test          # server + client (244 tests)
+npm run test          # server + client (312 tests)
 npm run typecheck     # both workspaces
 ```
 
@@ -107,6 +171,20 @@ The SQLite database lives in the named volume `api_data` mounted at
 
 `prisma migrate deploy` runs automatically on every `api` container
 startup — idempotent, so it's a no-op when the DB is already current.
+
+## Plans & limits
+
+Every account is on one of two plans. The caps are enforced on the server
+(the source of truth) and mirrored in the UI so buttons disable before you
+hit a wall.
+
+| Plan | Active owned documents | Editors per document | Upgrade |
+| ---- | ---------------------- | -------------------- | ------- |
+| **Basic** (default) | 5 | 1 | `POST /api/auth/upgrade` (or the **Upgrade** button) |
+| **Premium** | Unlimited | Unlimited | — |
+
+The plan badge in the workspace header shows the current tier and live usage
+(e.g. `Basic · 4/5 docs`).
 
 ## API endpoints
 
@@ -155,9 +233,10 @@ All endpoints are JSON. Auth-required ones expect
 
 ## Real-time channels
 
-- **Yjs WebSocket** (`ws://localhost:4001`) — per-document rooms named
-  `doc-<id>`. Carries CRDT updates (title + content) and awareness
-  (presence, revoke signals).
+- **Yjs WebSocket** (`ws://localhost:4001`, or `/yws` on the unified server) —
+  per-document rooms named `doc-<id>`. Carries CRDT updates (title + content)
+  and awareness (presence, revoke signals). Connections are authorized (valid
+  JWT + document access) before joining a room.
 - **BroadcastChannel** (`collab-notes-doc-events`) — same-browser cross-tab
   sidebar/event sync (created / soft-deleted / restored / permanent-deleted /
   share-added / share-revoked / shared-doc-* / etc.). Filtered by
