@@ -5,7 +5,7 @@
 # Build context is the repo root because we share the workspace lockfile
 # with the client. See docker-compose.yml for the build.context setting.
 
-FROM node:20-slim AS builder
+FROM node:25-slim AS builder
 WORKDIR /repo
 
 # Prisma's query engine is dynamically linked against libssl. Slim images
@@ -37,7 +37,7 @@ RUN npm run prisma:generate && npm run build
 # from the builder. Multi-stage COPY can mangle symlinks (especially binary
 # bin/ links on alpine), and a clean `npm ci --omit=dev` guarantees prisma
 # and its engine binaries land where node expects them.
-FROM node:20-slim AS runtime
+FROM node:25-slim AS runtime
 WORKDIR /repo
 
 # Same OpenSSL story as the builder stage — needed for the runtime Prisma
