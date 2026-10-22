@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# No token permissions by default; each job only reads the code.
+permissions: {}
+
+# A new push to the same branch or PR cancels the run it replaces.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      # Scripts stay on: the server's postinstall generates the Prisma client.
+      - run: npm ci
+      - name: Dependency vulnerability scan (production)
+        run: npm audit --omit=dev --audit-level=high
+      - run: npm run typecheck
+      # Server tests use a throwaway SQLite file set up by their own setup.ts.
+      - run: npm test
+      - run: npm run build
+
+  images:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The server image also bakes the embedding model, so this covers the
+      # Prisma and transformers install path end to end.
+      - run: docker build -f server/Dockerfile -t collab-server:ci .
+      - run: docker build -f client/Dockerfile -t collab-client:ci .
