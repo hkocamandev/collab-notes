@@ -19,6 +19,10 @@ RUN apt-get update -y && apt-get install -y --no-install-recommends openssl \
 COPY package.json package-lock.json ./
 COPY client/package.json client/package.json
 COPY server/package.json server/package.json
+# The server workspace's postinstall runs `prisma generate`, which fails if
+# the schema is not there yet. Schema only, so source edits keep the
+# dependency layer cached.
+COPY server/prisma server/prisma
 RUN npm ci
 
 # Generate Prisma client + compile TypeScript. Going through `npm run`
@@ -44,13 +48,14 @@ RUN apt-get update -y && apt-get install -y --no-install-recommends openssl \
 COPY package.json package-lock.json ./
 COPY client/package.json client/package.json
 COPY server/package.json server/package.json
+# Schema before install for the same postinstall reason as the builder stage.
+COPY server/prisma server/prisma
 RUN npm ci --omit=dev
 
-# Bring forward only the build outputs + Prisma schema. The Prisma generated
-# client lives under node_modules/.prisma — `prisma:generate` re-creates it
-# below so it matches whatever schema this image ships with.
+# Bring forward only the build outputs. The Prisma generated client lives
+# under node_modules/.prisma — `prisma:generate` re-creates it below so it
+# matches whatever schema this image ships with.
 COPY --from=builder /repo/server/dist ./server/dist
-COPY --from=builder /repo/server/prisma ./server/prisma
 
 WORKDIR /repo/server
 RUN npm run prisma:generate
