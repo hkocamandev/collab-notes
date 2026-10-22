@@ -17,7 +17,7 @@ WORKDIR /repo/client
 RUN npm run build
 
 # ── Runtime: nginx static + reverse proxy ────────────────────────────────
-FROM nginx:1.25-alpine AS runtime
+FROM nginx:1.29-alpine AS runtime
 
 # Replace the default nginx site with our SPA + proxy config.
 COPY client/nginx.conf /etc/nginx/conf.d/default.conf
