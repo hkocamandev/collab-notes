@@ -25,5 +25,10 @@
   },
   "engines": {
     "node": ">=20"
+  },
+  "overrides": {
+    "sharp": "^0.35.5",
+    "protobufjs": "^7.6.3",
+    "deepmerge-ts": "^8.0.2"
   }
 }
